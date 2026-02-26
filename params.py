@@ -28,7 +28,6 @@ DT_MS = 1000.0 / SAMPLERATE_HZ  # Derived
 
 # === PREPROCESSING ===
 SKIPROWS_JSON = 1
-SKIPROWS_FIRST_EVENT = 1
 EVENT_MAPPING = {
     '0': 0,
     'Input1*2*0': 1,  # Red events
@@ -42,6 +41,7 @@ CALCIUM_CHANNEL = 'CH1-470'  # Calcium
 REF_CHANNEL = 'CH1-410'  # Motion
 BASELINE_SAMPLES = 1000
 ZSCORE_WINDOW = 300  # Rolling if implemented
+SYNC_SIGNAL_TO_FIRST_EVENT = True  # Trim signal to start at first event timestamp
 
 # === EVENTS ===
 EVENT_GAP_MS = 5000  # Cluster threshold
@@ -55,6 +55,10 @@ EPOCH_MIN_LENGTH_SAMPLES = 100
 FIGURE_DPI = 150
 FIGURE_SIZE_TRACE = (14, 6)    # Full session trace
 FIGURE_SIZE_PERI = (10, 6)     # Peri-event average
+
+# Raw channel colours
+COLOR_470 = "#1f77b4"   # blue  — 470nm calcium signal
+COLOR_410 = "#ff7f0e"   # orange — 410nm isosbestic reference
 
 COLOR_DFF = "purple"
 COLOR_ZSCORE = "green"
