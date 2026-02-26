@@ -1,8 +1,23 @@
 import numpy as np
 import pandas as pd
 from params import (CALCIUM_CHANNEL, REF_CHANNEL, BASELINE_SAMPLES,
-                    T_PRE_EVENT_S, T_POST_EVENT_S, SKIP_FIRST_EVENT)
+                    T_PRE_EVENT_S, T_POST_EVENT_S, SKIP_FIRST_EVENT,
+                    SYNC_SIGNAL_TO_FIRST_EVENT)
 
+def sync_signal_to_first_event(time_s: np.ndarray, dff: np.ndarray,
+                                zscore: np.ndarray,
+                                first_event_time_s: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Trim signal to start at first valid event timestamp.
+    Synchronizes calcium trace to TTL pulse onset — discards pre-event recording."""
+    if not SYNC_SIGNAL_TO_FIRST_EVENT:
+        return time_s, dff, zscore
+    idx_start = np.searchsorted(time_s, first_event_time_s)
+    if idx_start >= len(time_s):
+        raise ValueError(f"First event time {first_event_time_s:.2f}s outside signal duration")
+    print(f"Synced signal to first event at {first_event_time_s:.2f}s "
+          f"(sample {idx_start}/{len(time_s)}, "
+          f"{len(time_s) - idx_start} samples remaining)")
+    return time_s[idx_start:], dff[idx_start:], zscore[idx_start:]
 
 def compute_corrected_signal(df_clean: pd.DataFrame) -> np.ndarray:
     calcium = df_clean[CALCIUM_CHANNEL].values    # 470nm: calcium + motion
@@ -73,6 +88,8 @@ def extract_all_epochs(signal: np.ndarray, time_s: np.ndarray,
 def filter_first_event(first_events: pd.DataFrame) -> pd.DataFrame:
     """Drop first cluster event if SKIP_FIRST_EVENT=True in params (spurious trigger)."""
     if SKIP_FIRST_EVENT:
+        deleted_row = first_events.iloc[[0]]  # keep as DataFrame for display
+        print(f"[SKIP_FIRST_EVENT] Deleted row:\n{deleted_row[['cluster_id', 'TimeStamp', 'Events']].to_string(index=False)}")
         filtered = first_events.iloc[1:].reset_index(drop=True)
         print(f"Skipped first event: {len(first_events)} → {len(filtered)} events")
         return filtered
@@ -81,36 +98,41 @@ def filter_first_event(first_events: pd.DataFrame) -> pd.DataFrame:
 
 def process_signals(df_clean: pd.DataFrame,
                     first_events: pd.DataFrame,
-                    stem: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+                    stem: str) -> tuple[np.ndarray, np.ndarray, np.ndarray,
+                                        np.ndarray, np.ndarray]:
+    """Returns: epochs_dff, epochs_z, peri_t, dff_full, zscore_full"""
     print("=" * 50)
     print("SIGNAL PROCESSING PIPELINE")
     print("=" * 50)
 
     time_s = df_clean["TimeStamp"].values / 1000.0
-
-    # Auto-detect dt from median sample interval (robust to timestamp jitter at ~60fps)
     dt = np.median(np.diff(time_s))
-    n_pre = int(np.round(T_PRE_EVENT_S / dt))
+    n_pre  = int(np.round(T_PRE_EVENT_S / dt))
     n_post = int(np.round(T_POST_EVENT_S / dt))
-
-    # Peri-event time axis: event onset = t=0 (RWD manual §8.1.6: Pre-Post window)
     peri_t = np.arange(-n_pre, n_post) * dt
     print(f"dt={dt * 1000:.2f}ms, n_pre={n_pre}, n_post={n_post}")
 
     corrected = compute_corrected_signal(df_clean)
-    dff, zscore = compute_dff_and_zscore(corrected)
+    dff, zscore = compute_dff_and_zscore(corrected)  # full-length, not trimmed
 
     events_to_use = filter_first_event(first_events)
     if events_to_use.empty:
         raise ValueError("No events remaining after filtering — check SKIP_FIRST_EVENT")
-    print(events_to_use[["cluster_id", "TimeStamp", "Events"]].to_string())
 
+    first_event_time_s = events_to_use["TimeStamp"].iloc[0] / 1000.0
+    # trim only for epoch extraction — dff/zscore full arrays preserved above
+    time_sync, dff_sync, zscore_sync = sync_signal_to_first_event(
+        time_s, dff, zscore, first_event_time_s
+    )
+
+    print(events_to_use[["cluster_id", "TimeStamp", "Events"]].to_string())
     event_times_s = events_to_use["TimeStamp"].values / 1000.0
-    epochs_dff = extract_all_epochs(dff, time_s, event_times_s, n_pre, n_post)
-    epochs_z = extract_all_epochs(zscore, time_s, event_times_s, n_pre, n_post)
+    epochs_dff = extract_all_epochs(dff_sync, time_sync, event_times_s, n_pre, n_post)
+    epochs_z   = extract_all_epochs(zscore_sync, time_sync, event_times_s, n_pre, n_post)
 
     print(f"SUCCESS: {stem} signals processed!")
-    return epochs_dff, epochs_z, peri_t
+    return epochs_dff, epochs_z, peri_t, dff, zscore  # dff/zscore = full, unsynced
+
 
 if __name__ == "__main__":
     import sys
