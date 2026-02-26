@@ -149,8 +149,10 @@ def run_all_plots(df_clean: pd.DataFrame, dff: np.ndarray, zscore: np.ndarray,
                     event_times_s=event_times_s,
                     t_zero_s=t_zero_s)
     plot_peri_event_average(peri_t, epochs_dff, epochs_z, stem)
-    print(f"SUCCESS: all figures saved to {FIGURES_DIR}")
-
+    if SAVE_FIGURES:
+        print(f"SUCCESS: all figures saved to {FIGURES_DIR}")
+    else:
+        print("SUCCESS: plotting completed (no files saved, SAVE_FIGURES=False)")
 
 
 if __name__ == "__main__":
