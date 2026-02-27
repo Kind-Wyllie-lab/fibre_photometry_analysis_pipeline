@@ -2,7 +2,19 @@ import numpy as np
 import pandas as pd
 from params import (CALCIUM_CHANNEL, REF_CHANNEL, BASELINE_SAMPLES,
                     T_PRE_EVENT_S, T_POST_EVENT_S, SKIP_FIRST_EVENT,
-                    SYNC_SIGNAL_TO_FIRST_EVENT)
+                    SYNC_SIGNAL_TO_FIRST_EVENT,SELECTED_CLUSTERS)
+
+def select_events_from_params(first_events: pd.DataFrame) -> pd.DataFrame:
+    """Apply selection rules from params.py to first_events."""
+    df = first_events.copy()
+
+    # cluster-based selection
+    if SELECTED_CLUSTERS is not None:
+        df = df[df["cluster_id"].isin(SELECTED_CLUSTERS)]
+    if df.empty:
+        raise ValueError("No events after applying SELECTED_* filters in params.py")
+
+    return df
 
 def sync_signal_to_first_event(time_s: np.ndarray, dff: np.ndarray,
                                 zscore: np.ndarray,
@@ -85,6 +97,21 @@ def extract_all_epochs(signal: np.ndarray, time_s: np.ndarray,
     print(f"Epochs extracted: {result.shape[0]} trials, {result.shape[1]} samples each")
     return result
 
+def select_events(first_events: pd.DataFrame,
+                  cluster_ids: list[int] | None = None) -> pd.DataFrame:
+    """Filter events by cluster_id list and/or absolute time window (s)."""
+    df = first_events.copy()
+
+    if cluster_ids is not None:
+        df = df[df["cluster_id"].isin(cluster_ids)]
+
+
+    if df.empty:
+        raise ValueError("No events after selection — relax filters")
+
+    return df
+
+
 def filter_first_event(first_events: pd.DataFrame) -> pd.DataFrame:
     """Drop first cluster event if SKIP_FIRST_EVENT=True in params (spurious trigger)."""
     if SKIP_FIRST_EVENT:
@@ -115,7 +142,11 @@ def process_signals(df_clean: pd.DataFrame,
     corrected = compute_corrected_signal(df_clean)
     dff, zscore = compute_dff_and_zscore(corrected)  # full-length, not trimmed
 
-    events_to_use = filter_first_event(first_events)
+    events_selected = select_events_from_params(first_events)
+    events_to_use = filter_first_event(events_selected)
+    if events_to_use.empty:
+        raise ValueError("No events remaining after selection/filtering — check params")
+
     if events_to_use.empty:
         raise ValueError("No events remaining after filtering — check SKIP_FIRST_EVENT")
 
