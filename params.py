@@ -1,38 +1,75 @@
 from pathlib import Path
+from typing import Literal
 
 # === PATHS ===
-'''DATA_ROOT = Path("/Users/Lou/Desktop/Fibre_phto_python_dir")
-OUTPUT_DIR = DATA_ROOT / "output"
-OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+BASE_PROJECT_PATH = Path(r"\\cmvm.datastore.ed.ac.uk\cmvm\sbms\users\s2830349\Win7\Desktop\Fibre_phot_project_2026")
+ANIMAL_ID = "4987"  # Works for "4879" or "Rat_4879"
+OUTPUT_DIR = BASE_PROJECT_PATH / "output"
 
-RAW_FILES = sorted(DATA_ROOT.glob("/Users/Lou/Library/CloudStorage/OneDrive-UniversityofEdinburgh/M2/fibre_photometry/20260212_Test_Lou/4879/4879_Fluorescence_Event_freezing_cs.csv")) #RAW_FILES = sorted(DATA_ROOT.glob("**/Fluorescence*.csv"))
+# === CONFIGURATION PARAMETERS ===
+TYPE_OF_RECORDING: Literal["Hab1", "Hab2", "Cond", "Recall"] = "Hab1"
+TYPE_OF_EVENTS: Literal["fluorescence", "fluorescence_event"] = "fluorescence"
 
-DATA_FILES = [str(f) for f in RAW_FILES]
-print(f"Data root: {DATA_ROOT}")
-print(f"Found Fluorescence files: {len(DATA_FILES)}")
-for f in RAW_FILES:
-    print(f"  {f.relative_to(DATA_ROOT)}")
-if not DATA_FILES:
-    raise ValueError(f"No Fluorescence*.csv under {DATA_ROOT}")
-print(f"Using first: {Path(DATA_FILES[0]).name}")'''
-# File Discovery Block (Replace existing)
-DATA_ROOT = Path("/Users/Lou/Library/CloudStorage/OneDrive-UniversityofEdinburgh/M2/fibre_photometry/20260212_Test_Lou/4879")
-OUTPUT_DIR = DATA_ROOT / "output"
-OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+def animal_output_dirs(animal_num: str) -> tuple[Path, Path]:
+    """Return (figures_dir, csv_dir). Create if missing."""
+    out_root = BASE_PROJECT_PATH / f"{animal_num}_output"
+    figs_dir = out_root / "figures"
+    csv_dir = out_root / "csv"
 
-# Direct path or glob pattern
-RAW_FILES = [DATA_ROOT / "4879_Fluorescence_Event_freezing_cs.csv"]  # Single file
-# Or glob siblings: RAW_FILES = sorted(DATA_ROOT.glob("4879_Fluorescence*.csv"))
+    created = False
+    if not figs_dir.exists():
+        figs_dir.mkdir(parents=True)
+        created = True
+    if not csv_dir.exists():
+        csv_dir.mkdir(parents=True)
+        created = True
 
-DATA_FILES = [str(f) for f in RAW_FILES]
-print(f"Data root: {DATA_ROOT}")
-print(f"Found files: {len(DATA_FILES)}")
-for f in RAW_FILES:
-    print(f"  {f.name}")  # Just filename for cleaner output
-if not DATA_FILES:
-    raise ValueError(f"No files found at {DATA_ROOT}")
-print(f"Using: {Path(DATA_FILES[0]).name}")
+    status = "created" if created else "exists"
+    print(f"{animal_num}_output/ [{status}]")
 
+    return figs_dir, csv_dir
+
+def select_data_files(recording_type: str, events_type: str, animal_id: str = ANIMAL_ID, base_path: Path = BASE_PROJECT_PATH) -> list[Path]:
+    root_dir = base_path / "data" / animal_id / recording_type
+    print(f"DEBUG: root_dir '{root_dir}' exists: {root_dir.exists()}")
+
+    all_files = []
+    if root_dir.exists():
+        all_files = list(root_dir.rglob("*"))  # All files recursively
+        print(f"DEBUG: Found {len(all_files)} total files/subdirs")
+        for f in all_files[:5]:  # First 5
+            print(f"  {f.relative_to(base_path)} {'DIR' if f.is_dir() else 'FILE'}")
+
+    # Case-insensitive fluorescence search
+    data_files = [f for f in all_files if
+                  ('fluorescence' in f.name.lower() or 'fluo' in f.name.lower())
+                  and f.suffix.lower() == '.csv']
+
+    if not data_files:
+        print(f"Warning: No fluorescence CSV files under {root_dir}")
+        print("  Try: TYPE_OF_RECORDING='Hab1/Hab1'")
+    else:
+        print(f"Found {len(data_files)} fluorescence files")
+
+    return sorted(data_files)
+
+
+if __name__ == "__main__":
+    print("=" * 50)
+    print(f"ANIMAL_ID: {ANIMAL_ID}")
+    print(f"TYPE_OF_RECORDING: {TYPE_OF_RECORDING}")
+    print(f"TYPE_OF_EVENTS: {TYPE_OF_EVENTS}")
+
+    DATA_FILES = select_data_files(TYPE_OF_RECORDING, TYPE_OF_EVENTS)
+    print(f"DATA_FILES ({len(DATA_FILES)}): {[f.name for f in DATA_FILES]}")
+
+    figs_dir, csv_dir = animal_output_dirs(ANIMAL_ID)
+    print(f"OUTPUT FIGS: {figs_dir}")
+    print(f"OUTPUT CSV:  {csv_dir}")
+    print("=" * 50)
+
+
+""" 
 # === SAMPLING ===
 SAMPLERATE_HZ = 60.0
 DT_MS = 1000.0 / SAMPLERATE_HZ
@@ -72,8 +109,8 @@ FIGURE_SIZE_PERI = (10, 6)
 
 SAVE_FIGURES = False
 PREVIEW_FIGURES = True
-FIGURES_DIR = OUTPUT_DIR / "figures"
-FIGURES_DIR.mkdir(exist_ok=True, parents=True)
+#FIGURES_DIR = OUTPUT_DIR / "figures"
+#FIGURES_DIR.mkdir(exist_ok=True, parents=True)
 
 # === COLORS & LINES ===
 COLOR_470 = "#1f77b4"      # Blue: calcium (470nm)
@@ -135,6 +172,7 @@ HEATMAP_YTICK_NBINS = None
 
 # === LOG SUMMARY ===
 print("Params loaded:")
-print(f"  Output: {OUTPUT_DIR}")
+#print(f"  Output: {OUTPUT_DIR}")
 print(f"  SR: {SAMPLERATE_HZ}Hz, Baseline: {BASELINE_SAMPLES} samples")
 print(f"  Epoch window: {T_PRE_EVENT_S}-{T_POST_EVENT_S}s")
+"""
