@@ -164,7 +164,6 @@ def process_signals(df_clean: pd.DataFrame,
     print(f"SUCCESS: {stem} signals processed!")
     return epochs_dff, epochs_z, peri_t, dff, zscore  # dff/zscore = full, unsynced
 
-
 if __name__ == "__main__":
     import sys
     sys.path.insert(0, "/Users/Lou/PycharmProjects/Fibre_photometry_M2")  # explicit project root

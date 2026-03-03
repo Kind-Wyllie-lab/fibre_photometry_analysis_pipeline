@@ -50,8 +50,8 @@ def clean_and_map_events(df_raw: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("No CH1-* columns")
     print(f"  Fluorescence cols: {fluo_cols}")
 
-    df_clean = df[['TimeStamp'] + fluo_cols].copy()
-    df_clean.columns = ['TimeStamp'] + FLUO_COLS[:len(fluo_cols)]
+    df_clean = df[['TimeStamp'] + fluo_cols + ['Events']].copy()
+    df_clean.columns = ['TimeStamp'] + FLUO_COLS[:len(fluo_cols)] + ['Events']
     print(f"  After select: shape={df_clean.shape}")
 
     # Time + events
@@ -72,7 +72,7 @@ def clean_and_map_events(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 # Method Block 3: Saver + Processor
 def save_cleaned(df_clean: pd.DataFrame, stem: str):
-    path = OUTPUT_DIR / f"cleaned_{stem}.csv"
+    path = CSV_DIR / f"cleaned_{stem}.csv"
     df_clean.to_csv(path, index=False)
     reloaded = pd.read_csv(path)
     assert reloaded.shape == df_clean.shape, "Save error"
@@ -90,3 +90,16 @@ def process_single_file(file_path: str = None):
     save_cleaned(df_clean, stem)
     print(f"SUCCESS: {stem}!")
     return df_clean
+
+if __name__ == "__main__":
+
+    print("TESTING PREPROCESSING STANDALONE")
+    print(f"DATA_FILES: {[f.name for f in DATA_FILES]}")
+    print(f"CSV_DIR: {CSV_DIR}")
+
+    df_clean = process_single_file()
+    print(f"\nSUCCESS!")
+    print(f"  Shape: {df_clean.shape}")
+    print(f"  Columns: {list(df_clean.columns)}")
+    print(f"  Events: {df_clean['Events_numeric'].value_counts().to_dict()}")
+    print(f"  Saved: {CSV_DIR / 'cleaned_*.csv'}")
