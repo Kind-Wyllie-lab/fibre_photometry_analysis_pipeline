@@ -1,42 +1,13 @@
 # plotting.py
 import numpy as np
 import pandas as pd
+import scipy.signal as signal
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from typing import Tuple
 
 
-from params import (
-    # Core figure params
-    SKIP_FIRST_EVENT,
-    FIGURE_DPI, FIGURE_FORMAT,
-    FIGURE_SIZE_TRACE, FIGURE_SIZE_PERI,
-    FIGURES_DIR, SAVE_FIGURES, PREVIEW_FIGURES,
-
-    # Colors
-    COLOR_DFF, COLOR_ZSCORE,
-    COLOR_PERI_MEAN, COLOR_EVENT_ONSET,
-    COLOR_470, COLOR_410,
-
-    # Lines / alpha
-    ALPHA_EVENT_LINES, ALPHA_SEM_FILL,
-    LW_TRACE, LW_PERI_MEAN, LW_EVENT_MARKER,
-
-    # Heatmap
-    HEATMAP_FIGSIZE,
-    HEATMAP_CMAP_DFF, HEATMAP_CMAP_Z,
-    HEATMAP_VMIN_DFF, HEATMAP_VMAX_DFF,
-    HEATMAP_VMIN_Z, HEATMAP_VMAX_Z,
-
-    # Tick styling
-    XTICK_FONTSIZE, XTICK_DIRECTION,
-    XTICK_WIDTH_MAJOR, XTICK_WIDTH_MINOR,
-    XTICK_LENGTH_MAJOR, XTICK_LENGTH_MINOR, XTICK_NBINS,
-    YTICK_FONTSIZE, YTICK_DIRECTION,
-    YTICK_WIDTH_MAJOR, YTICK_WIDTH_MINOR,
-    YTICK_LENGTH_MAJOR, YTICK_LENGTH_MINOR, YTICK_NBINS,     HEATMAP_XTICK_MAJOR, HEATMAP_XTICK_MINOR,
-    HEATMAP_YTICK_MAJOR_STEP, HEATMAP_YTICK_MINOR_STEP, HEATMAP_SHOW_ALL_YLABELS,
-
-)
+from params import *
 
 def _autoscale_y_to_signal(ax, y, pad_percent: float = 5.0):
     y = np.asarray(y)
@@ -134,7 +105,7 @@ def plot_full_fluorescence(df_clean: pd.DataFrame, stem: str):
     _set_ytick_params(axes[1])
 
     fig.tight_layout()
-    _finalise_figure(fig, f"full_fluorescence_{stem}")
+    _finalise_figure(fig, f"raw_Traces_{stem}")
 
 
 def plot_full_trace(df_clean: pd.DataFrame, dff: np.ndarray,
@@ -185,7 +156,7 @@ def plot_full_trace(df_clean: pd.DataFrame, dff: np.ndarray,
     _set_xtick_params(axes[-1])
 
     fig.tight_layout()
-    _finalise_figure(fig, f"full_trace_{stem}")
+    _finalise_figure(fig, f"DFF_Zs_traces_{stem}")
 
 
 def plot_peri_event_average(peri_t: np.ndarray, epochs_dff: np.ndarray,
@@ -314,6 +285,27 @@ def plot_peri_event_heatmaps(peri_t: np.ndarray,
 
 
 
+def plot_ofRS_mean_sem(trail_df: pd.DataFrame, stem: str):
+    """OFRS DFF-Mean-SEM.SVG: your style (darkcyan mean, SEM fill, red vline)."""
+    time_s = trail_df['TimeStamp'].values
+    mean = trail_df[f'{CALCIUM_CHANNEL}_mean'].values
+    sem = trail_df[f'{CALCIUM_CHANNEL}_sem'].values
+
+    fig, ax = plt.subplots(1, 1, figsize=FIGURE_SIZE_PERI)
+    ax.plot(time_s, mean, color=COLOR_PERI_MEAN, lw=LW_PERI_MEAN, label="Mean ΔF/F")
+    ax.fill_between(time_s, mean - sem, mean + sem, alpha=ALPHA_SEM_FILL, color=COLOR_PERI_MEAN)
+    ax.axvline(0, color=COLOR_EVENT_ONSET, ls="--", lw=LW_EVENT_MARKER, label="Event onset")
+
+    _autoscale_y_to_signal(ax, mean)
+    ax.set_xlabel("Time from event (s)")
+    ax.set_ylabel("ΔF/F")
+    ax.set_title(f"OFRS-style Peri-event Mean±SEM ({stem}, n={len(trail_df)} timepoints)")
+    ax.legend(); ax.grid(alpha=0.3)
+    _set_xtick_params(ax); _set_ytick_params(ax)
+
+    fig.tight_layout()
+    _finalise_figure(fig, f"OFRS_mean_sem_{stem}")
+
 def run_all_plots(df_clean: pd.DataFrame, dff: np.ndarray, zscore: np.ndarray,
                   epochs_dff: np.ndarray, epochs_z: np.ndarray,
                   peri_t: np.ndarray, stem: str,
@@ -326,7 +318,10 @@ def run_all_plots(df_clean: pd.DataFrame, dff: np.ndarray, zscore: np.ndarray,
     plot_full_fluorescence(df_clean, stem)
     plot_full_trace(df_clean, dff, zscore, stem, event_times_s=event_times_s, t_zero_s=t_zero_s)
     plot_peri_event_average(peri_t, epochs_dff, epochs_z, stem)
-    plot_peri_event_heatmaps(peri_t, epochs_dff, epochs_z, stem, filtered_events)  # Pass events
+    plot_peri_event_heatmaps(peri_t, epochs_dff, epochs_z, stem, filtered_events)
+   # trail_df, epochs_dFF_ofRS = compute_ofRS_perievent(df_clean, filtered_events, CALCIUM_CHANNEL)
+   # plot_ofRS_mean_sem(trail_df, stem)
+
     if SAVE_FIGURES:
         print(f"SUCCESS: all figures saved to {FIGURES_DIR}")
     else:
