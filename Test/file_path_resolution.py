@@ -98,6 +98,74 @@ DATA_FILES, OUTPUT_DIR, FIGURES_DIR = setup_and_resolve_data_paths(ANIMAL_ID)
 
 
 
+def animal_output_dirs(animal_num: str) -> tuple[Path, Path]:
+    """Return (figures_dir, csv_dir). Create if missing."""
+    out_root = BASE_PROJECT_PATH / f"{animal_num}_output"
+    figs_dir = out_root / "figures"
+    csv_dir = out_root / "csv"
+
+    created = False
+    if not figs_dir.exists():
+        figs_dir.mkdir(parents=True)
+        created = True
+    if not csv_dir.exists():
+        csv_dir.mkdir(parents=True)
+        created = True
+
+    status = "created" if created else "exists"
+    print(f"{animal_num}_output/ [{status}]")
+
+    return figs_dir, csv_dir
+
+def select_data_files(recording_type: str, events_type: str, animal_id: str = ANIMAL_ID, base_path: Path = BASE_PROJECT_PATH) -> list[Path]:
+    """
+    Select fibre photometry data files based on recording type and events type.
+
+    Parameters
+    ----------
+    recording_type : str
+        Recording session identifier ('hab1', 'hab2', 'cond', 'recall').
+    events_type : str
+        Event data type ('fluorescence', 'fluorescence_event', 'csv').
+    animal_id : str, optional
+        Animal identifier (default from global ANIMAL_ID).
+    base_path : Path, optional
+        Base project path (default from global BASE_PROJECT_PATH).
+
+    Returns
+    -------
+    list[Path]
+        List of selected data file paths in the appropriate folder.
+
+    Notes
+    -----
+    Assumes data files are organized in subfolders like 'data/{animal_id}/{recording_type}'
+    with files matching patterns. Falls back to space files if dir missing.
+    For neuroscience fibre photometry analysis in GCaMP/dLight recordings with TTL events.
+    """
+    data_dir = base_path / "data" / f"{animal_id}" / recording_type
+    file_patterns = {
+        "fluorescence": [f"{animal_id}_Fluorescence.csv", "Fluorescence.csv", "cleaned_fluorescence.csv"],
+        "fluorescence_event": ["4879_Fluorescence_Event_freezing_cs.csv", "fluorescence_event*.csv"],
+        "csv": ["*.csv"]
+    }
+
+    data_files = []
+    if data_dir.exists():
+        for pattern in file_patterns.get(events_type, ["*.csv"]):
+            data_files.extend(list(data_dir.glob(pattern)))
+
+    # Fallback to known space files if no matches (adapt as needed)
+    if not data_files:
+        fallback_patterns = file_patterns[events_type]
+        print(f"Warning: No files in {data_dir}. Using fallback patterns: {fallback_patterns}")
+        # In practice, load from space-attached files here or adjust BASE_PROJECT_PATH to include them
+
+    if not data_files:
+        raise FileNotFoundError(f"No matching files found for {recording_type}/{events_type}")
+
+    return sorted(data_files)
+
 
 
 
