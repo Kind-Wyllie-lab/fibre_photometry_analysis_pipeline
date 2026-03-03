@@ -1,13 +1,16 @@
+#params.py
 from pathlib import Path
 from typing import Literal
 
 # === PATHS ===
 BASE_PROJECT_PATH = Path(r"\\cmvm.datastore.ed.ac.uk\cmvm\sbms\users\s2830349\Win7\Desktop\Fibre_phot_project_2026")
 ANIMAL_ID = "4987"  # Works for "4879" or "Rat_4879"
+
 OUTPUT_DIR = BASE_PROJECT_PATH / "output"
+OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 # === CONFIGURATION PARAMETERS ===
-TYPE_OF_RECORDING: Literal["Hab1", "Hab2", "Cond", "Recall"] = "Hab1"
+TYPE_OF_RECORDING: Literal["Hab1", "Hab2", "Cond", "Recall"] = "Recall"
 TYPE_OF_EVENTS: Literal["fluorescence", "fluorescence_event"] = "fluorescence"
 
 def animal_output_dirs(animal_num: str) -> tuple[Path, Path]:
@@ -29,47 +32,51 @@ def animal_output_dirs(animal_num: str) -> tuple[Path, Path]:
 
     return figs_dir, csv_dir
 
-def select_data_files(recording_type: str, events_type: str, animal_id: str = ANIMAL_ID, base_path: Path = BASE_PROJECT_PATH) -> list[Path]:
-    root_dir = base_path / "data" / animal_id / recording_type
-    print(f"DEBUG: root_dir '{root_dir}' exists: {root_dir.exists()}")
 
-    all_files = []
-    if root_dir.exists():
-        all_files = list(root_dir.rglob("*"))  # All files recursively
-        print(f"DEBUG: Found {len(all_files)} total files/subdirs")
-        for f in all_files[:5]:  # First 5
-            print(f"  {f.relative_to(base_path)} {'DIR' if f.is_dir() else 'FILE'}")
+def select_data_files(recording_type: str, events_type: str, animal_id: str = ANIMAL_ID,
+                      base_path: Path = BASE_PROJECT_PATH) -> list[Path]:
+    """Select fluorescence CSV from animalid_cleaned folder.
+
+    - 'fluorescence': picks aligned/regular file (EXCLUDES *-unaligned.csv)
+    - 'fluorescence_event': any fluorescence CSV (first match)
+    """
+    cleaned_dir = base_path / f"{animal_id}_cleaned"
+    root_dir = cleaned_dir / recording_type
+
+    print(f"DEBUG: Looking in '{root_dir}' (events: {events_type})")
+
+    all_files = list(root_dir.rglob("*")) if root_dir.exists() else []
 
     # Case-insensitive fluorescence search
-    data_files = [f for f in all_files if
-                  ('fluorescence' in f.name.lower() or 'fluo' in f.name.lower())
-                  and f.suffix.lower() == '.csv']
+    data_files = sorted([f for f in all_files if
+                         ('fluorescence' in f.name.lower() or 'fluo' in f.name.lower())
+                         and f.suffix.lower() == '.csv'])
 
     if not data_files:
-        print(f"Warning: No fluorescence CSV files under {root_dir}")
-        print("  Try: TYPE_OF_RECORDING='Hab1/Hab1'")
-    else:
-        print(f"Found {len(data_files)} fluorescence files")
+        print(f"Warning: No fluorescence CSV under {root_dir}")
+        return []
 
-    return sorted(data_files)
+    print(f"Available: {[f.name for f in data_files]}")
 
+    # Selection by TYPE_OF_EVENTS
+    if events_type == "fluorescence":
+        # EXCLUDE unaligned - pick first NON-unaligned
+        selected = next((f for f in data_files if "unaligned" not in f.name.lower()), None)
+        if selected is None:
+            print("Warning: No non-unaligned file found, using first")
+            selected = data_files[0]
+        print(f"Selected (no-unaligned): {selected.name}")
+    else:  # fluorescence_event
+        selected = data_files[0]
+        print(f"Selected (first): {selected.name}")
 
-if __name__ == "__main__":
-    print("=" * 50)
-    print(f"ANIMAL_ID: {ANIMAL_ID}")
-    print(f"TYPE_OF_RECORDING: {TYPE_OF_RECORDING}")
-    print(f"TYPE_OF_EVENTS: {TYPE_OF_EVENTS}")
-
-    DATA_FILES = select_data_files(TYPE_OF_RECORDING, TYPE_OF_EVENTS)
-    print(f"DATA_FILES ({len(DATA_FILES)}): {[f.name for f in DATA_FILES]}")
-
-    figs_dir, csv_dir = animal_output_dirs(ANIMAL_ID)
-    print(f"OUTPUT FIGS: {figs_dir}")
-    print(f"OUTPUT CSV:  {csv_dir}")
-    print("=" * 50)
+    return [selected]
 
 
-""" 
+
+# === FILES SELECTION ===
+DATA_FILES = select_data_files(TYPE_OF_RECORDING, TYPE_OF_EVENTS)
+FIGURES_DIR, CSV_DIR = animal_output_dirs(ANIMAL_ID)
 # === SAMPLING ===
 SAMPLERATE_HZ = 60.0
 DT_MS = 1000.0 / SAMPLERATE_HZ
@@ -98,8 +105,18 @@ EPOCH_MIN_LENGTH_SAMPLES = 100
 
 T_PRE_EVENT_S = 2
 T_POST_EVENT_S = 10.0
-SELECTED_CLUSTERS = list(range(0,4)) #SELECTED_CLUSTERS = list(range(5, 15)), select Clusters 5-14
 
+BASELINE_START_S = -5.0
+BASELINE_END_S = 0.0
+
+SELECTED_CLUSTERS = list(range(0,20)) #SELECTED_CLUSTERS = list(range(5, 15)), select Clusters 5-14
+
+
+"""SMOOTHNESS = 15  # Manual default
+OFFSET_SUB_470 = 0  # Dark fiber /2
+OFFSET_SUB_410 = 0
+BASELINE_METHOD = 'PLS'  # or 'Exponential'
+USE_MOTION_CORR = True"""
 
 # === FIGURE CORE ===
 FIGURE_DPI = 300
@@ -123,7 +140,7 @@ COLOR_EVENT_ONSET = "red"  # Event time markers
 
 ALPHA_EVENT_LINES = 0.5    # Vertical event line transparency
 ALPHA_SEM_FILL = 0.4       # SEM shading transparency
-LW_TRACE = 0.6             # Raw trace thickness
+LW_TRACE = 0.1             # Raw trace thickness
 LW_PERI_MEAN = 1.0         # Mean line thickness
 LW_EVENT_MARKER = 0.4      # Event marker thickness
 
@@ -175,4 +192,18 @@ print("Params loaded:")
 #print(f"  Output: {OUTPUT_DIR}")
 print(f"  SR: {SAMPLERATE_HZ}Hz, Baseline: {BASELINE_SAMPLES} samples")
 print(f"  Epoch window: {T_PRE_EVENT_S}-{T_POST_EVENT_S}s")
-"""
+
+
+if __name__ == "__main__":
+    print("=" * 50)
+    print(f"ANIMAL_ID: {ANIMAL_ID}")
+    print(f"TYPE_OF_RECORDING: {TYPE_OF_RECORDING}")
+    print(f"TYPE_OF_EVENTS: {TYPE_OF_EVENTS}")
+
+    DATA_FILES = select_data_files(TYPE_OF_RECORDING, TYPE_OF_EVENTS)
+    print(f"DATA_FILES ({len(DATA_FILES)}): {[f.name for f in DATA_FILES]}")
+
+    figs_dir, csv_dir = animal_output_dirs(ANIMAL_ID)
+    print(f"OUTPUT FIGS: {figs_dir}")
+    print(f"OUTPUT CSV:  {csv_dir}")
+    print("=" * 50)
