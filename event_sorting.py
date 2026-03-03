@@ -63,24 +63,48 @@ def process_events(df_clean: pd.DataFrame, stem: str):
 
 
 def extract_non_zero_events(df_clean: pd.DataFrame) -> pd.DataFrame:
-    non_zero = df_clean[df_clean["Events_numeric"] != 0][["TimeStamp", "Events_numeric"]].copy()
-    non_zero = non_zero.rename(columns={"Events_numeric": "Events"})
+    print("DEBUG Events columns:", df_clean.columns.tolist())
+
+    # Pattern match ANY "Input1*2*" = event (TTL-like)
+    event_mask = df_clean['Events'].str.contains(r'Input1\*2\*[01]', na=False, regex=True)
+    print(f"Pattern 'Input1*2*' matches: {event_mask.sum()} events")
+
+    non_zero = df_clean[event_mask].copy()
     if non_zero.empty:
-        raise ValueError("No non-zero events found in cleaned data")
-    print(f"Non-zero events: {len(non_zero)}")
+        print("Raw Events sample:")
+        print(df_clean['Events'].value_counts())
+        raise ValueError("No events matched pattern")
+
+    # Minimal events DataFrame
+    events_df = non_zero[["TimeStamp"]].copy()
+    events_df["Events"] = 1  # Generic marker
+    print(f"Extracted {len(events_df)} events")
+    return events_df
+
+
     return non_zero
 
-def detect_clusters_and_first_events(df_events: pd.DataFrame) -> pd.DataFrame:
+def detect_clusters_and_first_events(df_events: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Cluster events by gap > EVENT_GAP_MS, return first event per cluster."""
     df = df_events.copy()
+
+    # Gap between consecutive events (ms)
     df["gap_ms"] = df["TimeStamp"].diff()
+
+    # New cluster when gap > threshold
     df["cluster_id"] = (df["gap_ms"] > EVENT_GAP_MS).cumsum()
+
     n_clusters = df["cluster_id"].nunique()
     print(f"Number of clusters: {n_clusters}")
+
+    # First event per cluster (earliest TimeStamp)
     first_events = df.loc[
         df.groupby("cluster_id")["TimeStamp"].idxmin()
     ][["cluster_id", "TimeStamp", "Events"]].reset_index(drop=True)
-    print(f"First events per cluster:\n{first_events.head()}")
-    return df, first_events
+
+    print(f"First events per cluster:\n{first_events}")
+    return df, first_events  # clustered_df, first_events
+
 
 def save_event_files(df_events: pd.DataFrame, first_events: pd.DataFrame, stem: str):
     events_path = OUTPUT_DIR / f"events_sorting_{stem}.csv"
@@ -101,8 +125,21 @@ def process_events(df_clean: pd.DataFrame, stem: str):
     return df_events_clustered, first_events
 
 if __name__ == "__main__":
+    """STANDALONE TEST - Events processing pipeline"""
+    print("TESTING EVENT PROCESSING STANDALONE")
+    print(f"DATA_FILES: {[f.name for f in DATA_FILES]}")
+
     from preprocessing import process_single_file
-    from pathlib import Path
     df_clean = process_single_file()
+
+    print(f"df_clean shape: {df_clean.shape}")
+    print(f"Events_numeric: {df_clean['Events_numeric'].value_counts().to_dict()}")
+
     stem = Path(DATA_FILES[0]).stem
-    process_events(df_clean, stem)
+    clustered_events, first_events = process_events(df_clean, stem)
+
+    print(f"\nSUCCESS!")
+    print(f"  Clustered events: {len(clustered_events)}")
+    print(f"  First events/clusters: {len(first_events)}")
+    print(f"  Clusters: {clustered_events['cluster_id'].nunique()}")
+    print(f"  Saved: {OUTPUT_DIR}/events_sorting_*.csv")
