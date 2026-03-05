@@ -1,11 +1,9 @@
 # plotting.py
 import numpy as np
 import pandas as pd
-import scipy.signal as signal
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from typing import Tuple
-
+from typing import Optional
 
 from params import *
 
@@ -38,7 +36,7 @@ def _set_xtick_params(ax):
     ax.tick_params(axis="x", reset=True)
     ax.tick_params(
         axis="x",
-        bottom=True, top=False,          # ← only bottom ticks
+        bottom=True, top=False,
         labelbottom=True, labeltop=False,
         labelsize=XTICK_FONTSIZE,
         direction=XTICK_DIRECTION,
@@ -60,7 +58,7 @@ def _set_ytick_params(ax):
     ax.tick_params(axis="y", reset=True)
     ax.tick_params(
         axis="y",
-        left=True, right=False,          # ← only left ticks
+        left=True, right=False,
         labelleft=True, labelright=False,
         labelsize=YTICK_FONTSIZE,
         direction=YTICK_DIRECTION,
@@ -108,19 +106,19 @@ def plot_full_fluorescence(df_clean: pd.DataFrame, stem: str):
     _finalise_figure(fig, f"raw_Traces_{stem}")
 
 
-def plot_full_trace(df_clean: pd.DataFrame, dff: np.ndarray,
+def plot_full_trace(df_clean: pd.DataFrame, dff_fitted: np.ndarray,
                     zscore: np.ndarray, stem: str,
-                    event_times_s: np.ndarray | None = None,
-                    t_zero_s: float | None = None):
-    if len(dff) != len(df_clean) or len(zscore) != len(df_clean):
-        raise ValueError(f"dff/zscore length {len(dff)} != df_clean length {len(df_clean)}")
+                    event_times_s: Optional[np.ndarray] = None,
+                    t_zero_s: Optional[float] = None):
+    if len(dff_fitted) != len(df_clean) or len(zscore) != len(df_clean):
+        raise ValueError(f"dff/zscore length {len(dff_fitted)} != df_clean length {len(df_clean)}")
 
     time_s = df_clean["TimeStamp"].values / 1000.0
     origin = t_zero_s if t_zero_s is not None else time_s[0]
 
     idx_start = np.searchsorted(time_s, origin)
     time_plot = time_s[idx_start:] - origin
-    dff_plot = dff[idx_start:]
+    dff_plot = dff_fitted[idx_start:]
     zscore_plot = zscore[idx_start:]
 
     if event_times_s is not None:
@@ -131,10 +129,10 @@ def plot_full_trace(df_clean: pd.DataFrame, dff: np.ndarray,
     fig, axes = plt.subplots(2, 1, figsize=FIGURE_SIZE_TRACE, sharex=True)
 
     for ax, sig, ylabel, color in zip(
-        axes,
-        [dff_plot, zscore_plot],
-        ["ΔF/F", "Z-score"],
-        [COLOR_DFF, COLOR_ZSCORE],
+            axes,
+            [dff_plot, zscore_plot],
+            ["ΔF/F", "Z-score"],
+            [COLOR_DFF, COLOR_ZSCORE],
     ):
         ax.plot(time_plot, sig, color=color, lw=LW_TRACE, label=ylabel)
         for t in event_times_plot:
@@ -170,9 +168,9 @@ def plot_peri_event_average(peri_t: np.ndarray, epochs_dff: np.ndarray,
     fig, axes = plt.subplots(2, 1, figsize=FIGURE_SIZE_PERI, sharex=True)
 
     for ax, epochs, ylabel in zip(
-        axes,
-        [epochs_dff, epochs_z],
-        ["ΔF/F", "Z-score"],
+            axes,
+            [epochs_dff, epochs_z],
+            ["ΔF/F", "Z-score"],
     ):
         mean = epochs.mean(axis=0)
         sem = epochs.std(axis=0) / np.sqrt(len(epochs))
@@ -198,11 +196,12 @@ def plot_peri_event_average(peri_t: np.ndarray, epochs_dff: np.ndarray,
     fig.tight_layout()
     _finalise_figure(fig, f"peri_event_{stem}")
 
+
 def plot_peri_event_heatmaps(peri_t: np.ndarray,
                              epochs_dff: np.ndarray,
                              epochs_z: np.ndarray,
                              stem: str,
-                             filtered_events: pd.DataFrame | None = None):
+                             filtered_events: Optional[pd.DataFrame] = None):
     if epochs_dff.ndim != 2 or epochs_z.ndim != 2:
         raise ValueError(
             f"epochs must be 2D, got dff={epochs_dff.ndim}D, z={epochs_z.ndim}D"
@@ -212,7 +211,6 @@ def plot_peri_event_heatmaps(peri_t: np.ndarray,
     if len(peri_t) != n_time:
         raise ValueError(f"peri_t length {len(peri_t)} != n_timepoints {n_time}")
 
-    # --- define cluster_ids ONCE, before any use ---
     if filtered_events is not None and "cluster_id" in filtered_events.columns:
         cluster_ids = filtered_events["cluster_id"].to_numpy()
         cluster_ids = cluster_ids[:n_trials].astype(str)
@@ -227,7 +225,7 @@ def plot_peri_event_heatmaps(peri_t: np.ndarray,
     ]
 
     for ax, data, (y_label, cmap, v_min, v_max) in zip(
-        axes, [epochs_dff, epochs_z], subplot_specs
+            axes, [epochs_dff, epochs_z], subplot_specs
     ):
         im = ax.imshow(
             data,
@@ -241,27 +239,23 @@ def plot_peri_event_heatmaps(peri_t: np.ndarray,
             vmax=v_max,
         )
 
-        # X ticks
         ax.set_xlim(peri_t[0], peri_t[-1])
         major_locator = mticker.MultipleLocator(HEATMAP_XTICK_MAJOR)
         minor_locator = mticker.MultipleLocator(HEATMAP_XTICK_MINOR)
         ax.xaxis.set_major_locator(major_locator)
         ax.xaxis.set_minor_locator(minor_locator)
 
-        # Y ticks / labels from cluster_ids
         if HEATMAP_SHOW_ALL_YLABELS:
             yticks = np.arange(1, n_trials + 1, dtype=float)
             yticklabels = cluster_ids
         else:
             step = HEATMAP_YTICK_MAJOR_STEP
             yticks = np.arange(1, n_trials + 1, step, dtype=float)
-            # yticks are 1‑based indices, convert to int to index list/array
             yticklabels = [cluster_ids[int(i) - 1] for i in yticks]
 
         ax.set_yticks(yticks, minor=False)
         ax.set_yticklabels(yticklabels)
 
-        # minor grid lines between trials
         if n_trials > 1 and HEATMAP_YTICK_MINOR_STEP > 0:
             minor_ticks = np.arange(1.5, n_trials, HEATMAP_YTICK_MINOR_STEP, dtype=float)
             ax.set_yticks(minor_ticks, minor=True)
@@ -284,43 +278,39 @@ def plot_peri_event_heatmaps(peri_t: np.ndarray,
     _finalise_figure(fig, f"peri_event_heatmaps_{stem}")
 
 
+def run_all_plots(df_clean: pd.DataFrame,
+                  dff_fitted: np.ndarray,
+                  zscore: np.ndarray,
+                  epochs_dff: np.ndarray,
+                  epochs_z: np.ndarray,
+                  peri_t: np.ndarray,
+                  stem: str,
+                  event_times_s: Optional[np.ndarray] = None,
+                  t_zero_s: Optional[float] = None,
+                  filtered_events: Optional[pd.DataFrame] = None):
+    """Generate all plots for fiber photometry analysis.
 
-def plot_ofRS_mean_sem(trail_df: pd.DataFrame, stem: str):
-    """OFRS DFF-Mean-SEM.SVG: your style (darkcyan mean, SEM fill, red vline)."""
-    time_s = trail_df['TimeStamp'].values
-    mean = trail_df[f'{CALCIUM_CHANNEL}_mean'].values
-    sem = trail_df[f'{CALCIUM_CHANNEL}_sem'].values
-
-    fig, ax = plt.subplots(1, 1, figsize=FIGURE_SIZE_PERI)
-    ax.plot(time_s, mean, color=COLOR_PERI_MEAN, lw=LW_PERI_MEAN, label="Mean ΔF/F")
-    ax.fill_between(time_s, mean - sem, mean + sem, alpha=ALPHA_SEM_FILL, color=COLOR_PERI_MEAN)
-    ax.axvline(0, color=COLOR_EVENT_ONSET, ls="--", lw=LW_EVENT_MARKER, label="Event onset")
-
-    _autoscale_y_to_signal(ax, mean)
-    ax.set_xlabel("Time from event (s)")
-    ax.set_ylabel("ΔF/F")
-    ax.set_title(f"OFRS-style Peri-event Mean±SEM ({stem}, n={len(trail_df)} timepoints)")
-    ax.legend(); ax.grid(alpha=0.3)
-    _set_xtick_params(ax); _set_ytick_params(ax)
-
-    fig.tight_layout()
-    _finalise_figure(fig, f"OFRS_mean_sem_{stem}")
-
-def run_all_plots(df_clean: pd.DataFrame, dff: np.ndarray, zscore: np.ndarray,
-                  epochs_dff: np.ndarray, epochs_z: np.ndarray,
-                  peri_t: np.ndarray, stem: str,
-                  event_times_s: np.ndarray | None = None,
-                  t_zero_s: float | None = None,
-                  filtered_events: pd.DataFrame | None = None):  # Add this line
+    Args:
+        df_clean: Preprocessed DataFrame with TimeStamp, CH1-470, CH1-410
+        dff_fitted: Full-trace ΔF/F normalized to fitted410 (photobleaching correction)
+        zscore: Full-trace z-score
+        epochs_dff: Peri-event ΔF/F epochs (n_trials x n_timepoints)
+        epochs_z: Peri-event z-score epochs (n_trials x n_timepoints)
+        peri_t: Time vector for epochs (s, relative to event)
+        stem: Filename stem for saved figures
+        event_times_s: Event timestamps (s) for vertical lines in full trace
+        t_zero_s: Time to sync full trace to (first event time)
+        filtered_events: DataFrame with cluster_id for heatmap y-labels
+    """
     print("=" * 50)
     print("PLOTTING PIPELINE")
     print("=" * 50)
+
     plot_full_fluorescence(df_clean, stem)
-    plot_full_trace(df_clean, dff, zscore, stem, event_times_s=event_times_s, t_zero_s=t_zero_s)
+    plot_full_trace(df_clean, dff_fitted, zscore, stem,
+                    event_times_s=event_times_s, t_zero_s=t_zero_s)
     plot_peri_event_average(peri_t, epochs_dff, epochs_z, stem)
     plot_peri_event_heatmaps(peri_t, epochs_dff, epochs_z, stem, filtered_events)
-   # trail_df, epochs_dFF_ofRS = compute_ofRS_perievent(df_clean, filtered_events, CALCIUM_CHANNEL)
-   # plot_ofRS_mean_sem(trail_df, stem)
 
     if SAVE_FIGURES:
         print(f"SUCCESS: all figures saved to {FIGURES_DIR}")
@@ -334,35 +324,29 @@ if __name__ == "__main__":
 
     from preprocessing import process_single_file
     from event_sorting import process_events
-    from signal_processing import process_signals, filter_first_event
+    from signal_processing import process_signals
 
-    # 1) Load and preprocess single file
     input_df = process_single_file()
     input_stem = "Fluorescence"
 
-    # 2) Events: clusters and first events
     _, input_first_events = process_events(input_df, input_stem)
 
-    # 3) Signals: dFF, z, peri-epochs
     (
         input_epochs_dff,
         input_epochs_z,
         input_peri_t,
-        input_dff,
+        input_dff_baseline,
+        input_dff_fitted,
         input_zscore,
+        input_filtered_events
     ) = process_signals(input_df, input_first_events, input_stem)
 
-    # 4) Align t=0 to first event in full trace
-    input_t_zero_s = input_first_events.iloc[0]["TimeStamp"] / 1000.0
-
-    # 5) Filter events according to SKIP_FIRST_EVENT / clusters
-    input_filtered_events = filter_first_event(input_first_events)
+    input_t_zero_s = input_filtered_events.iloc[0]["TimeStamp"] / 1000.0
     input_event_times_s = input_filtered_events["TimeStamp"].values / 1000.0
 
-    # 6) Run plotting pipeline
     run_all_plots(
         input_df,
-        input_dff,
+        input_dff_fitted,
         input_zscore,
         input_epochs_dff,
         input_epochs_z,
@@ -370,5 +354,5 @@ if __name__ == "__main__":
         input_stem,
         event_times_s=input_event_times_s,
         t_zero_s=input_t_zero_s,
-        filtered_events=input_filtered_events,
+        filtered_events=input_filtered_events
     )
