@@ -6,12 +6,15 @@ from typing import Literal
 base_path = Path(r"/media/prignane/data_fast/Fibre_photmetry")
 animal_id = "Rat_4987"  # Works for "4879" or "Rat_4879"
 
-output_dir = base_path / "output"
+output_dir = base_path / f"{animal_id}/output"
 output_dir.mkdir(exist_ok=True, parents=True)
 
 # === CONFIGURATION PARAMETERS ===
-recording_type: Literal["Hab1", "Hab2", "Cond", "Recall"] = "Recall"
+session: Literal["Hab1", "Hab2", "Cond", "Recall"] = "Recall"
 events_type: Literal["fluorescence", "fluorescence_event"] = "fluorescence"
+
+output_dir = base_path / f"{animal_id}/{session}/output"
+output_dir.mkdir(exist_ok=True, parents=True)
 
 def animal_output_dirs(animal_num: str) -> tuple[Path, Path]:
     """Return (figures_dir, csv_dir). Create if missing."""
@@ -40,7 +43,7 @@ def select_data_files(recording_type: str, events_type: str, animal_id: str = an
     - 'fluorescence': picks aligned/regular file (EXCLUDES *-unaligned.csv)
     - 'fluorescence_event': any fluorescence CSV (first match)
     """
-    cleaned_dir = base_path / f"{animal_id}_cleaned"
+    cleaned_dir = base_path / f"{animal_id}"
     root_dir = cleaned_dir / recording_type
 
     print(f"DEBUG: Looking in '{root_dir}' (events: {events_type})")
@@ -75,8 +78,8 @@ def select_data_files(recording_type: str, events_type: str, animal_id: str = an
 
 
 # === FILES SELECTION ===
-# data_files = select_data_files(recording_type, events_type)
-# figures_dir, CSV_DIR = animal_output_dirs(animal_id)
+data_files = select_data_files(session, events_type)
+figures_dir, csv_dir = animal_output_dirs(animal_id)
 # === SAMPLING ===
 sample_rate_hz = 60.0
 dt_ms = 1000.0 / sample_rate_hz #TODO clarify
@@ -194,16 +197,16 @@ print(f"  SR: {sample_rate_hz}Hz, Baseline: {baseline_samples} samples")
 print(f"  Epoch window: {time_pre_event_s}-{time_post_event_s}s")
 
 
-if __name__ == "__main__":
-    print("=" * 50)
-    print(f"ANIMAL_ID: {animal_id}")
-    print(f"TYPE_OF_RECORDING: {recording_type}")
-    print(f"TYPE_OF_EVENTS: {events_type}")
-
-    data_files = select_data_files(recording_type, events_type)
-    print(f"DATA_FILES ({len(data_files)}): {[f.name for f in data_files]}")
-
-    figs_dir, csv_dir = animal_output_dirs(animal_id)
-    print(f"OUTPUT FIGS: {figs_dir}")
-    print(f"OUTPUT CSV:  {csv_dir}")
-    print("=" * 50)
+# if __name__ == "__main__":
+#     print("=" * 50)
+#     print(f"ANIMAL_ID: {animal_id}")
+#     print(f"TYPE_OF_RECORDING: {recording_type}")
+#     print(f"TYPE_OF_EVENTS: {events_type}")
+#
+#     data_files = select_data_files(recording_type, events_type)
+#     print(f"DATA_FILES ({len(data_files)}): {[f.name for f in data_files]}")
+#
+#     figs_dir, csv_dir = animal_output_dirs(animal_id)
+#     print(f"OUTPUT FIGS: {figs_dir}")
+#     print(f"OUTPUT CSV:  {csv_dir}")
+#     print("=" * 50)
