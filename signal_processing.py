@@ -12,7 +12,7 @@ def select_events_from_params(first_events: pd.DataFrame) -> pd.DataFrame:
     """Apply selection rules from params.py to first_events."""
     df = first_events.copy()
     if selected_clusters is not None:
-        df = df[df["cluster_id"].isin(selected_clusters)]
+        df = df[df["cs_n"].isin(selected_clusters)]
     if df.empty:
         raise ValueError("No events after applying SELECTED_* filters in params.py")
     return df
@@ -22,7 +22,7 @@ def filter_first_event(first_events: pd.DataFrame) -> pd.DataFrame:
     """Drop first cluster event if SKIP_FIRST_EVENT=True in params (spurious trigger)."""
     if skip_first_event:
         deleted_row = first_events.iloc[[0]]
-        print(f"[SKIP_FIRST_EVENT] Deleted row:\n{deleted_row[['cluster_id', 'TimeStamp', 'Events']].to_string(index=False)}")
+        print(f"[SKIP_FIRST_EVENT] Deleted row:\n{deleted_row[['cs_n', 'TimeStamp', 'Events_numeric']].to_string(index=False)}")
         filtered = first_events.iloc[1:].reset_index(drop=True)
         print(f"Skipped first event: {len(first_events)} → {len(filtered)} events")
         return filtered
@@ -131,7 +131,7 @@ np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     if events_to_use.empty:
         raise ValueError("No events remaining after selection/filtering — check params")
 
-    print(events_to_use[["cluster_id", "TimeStamp", "Events"]].to_string())
+    print(events_to_use[["cs_n", "TimeStamp", "Events"]].to_string())
     event_times_s = events_to_use["TimeStamp"].values / 1000.0
 
     epochs_dff = extract_all_epochs(dff_baseline, time_s, event_times_s, n_pre, n_post)
