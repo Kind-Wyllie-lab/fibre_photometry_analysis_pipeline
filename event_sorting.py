@@ -91,7 +91,7 @@ def detect_clusters_and_first_events(df_events: pd.DataFrame) -> tuple[pd.DataFr
     # First event per cluster (earliest TimeStamp)
     first_events = df.loc[
         df.groupby("cluster_id")["TimeStamp"].idxmin()
-    ][["cluster_id", "TimeStamp", "Events"]].reset_index(drop=True)
+    ][["cluster_id", "TimeStamp", "Events_numeric"]].reset_index(drop=True)
 
     print(f"First events per cluster:\n{first_events}")
     return df, first_events  # clustered_df, first_events
