@@ -65,24 +65,15 @@ def process_events(df_clean: pd.DataFrame, stem: str):
 def extract_non_zero_events(df_clean: pd.DataFrame) -> pd.DataFrame:
     print("DEBUG Events columns:", df_clean.columns.tolist())
 
-    # Pattern match ANY "Input1*2*" = event (TTL-like)
-    event_mask = df_clean['Events'].str.contains(r'Input1\*2\*[01]', na=False, regex=True)
-    print(f"Pattern 'Input1*2*' matches: {event_mask.sum()} events")
+    events_df = df_clean.loc[df_clean['Events_numeric'] != 0]
 
-    non_zero = df_clean[event_mask].copy()
-    if non_zero.empty:
+    if events_df.empty:
         print("Raw Events sample:")
         print(df_clean['Events'].value_counts())
         raise ValueError("No events matched pattern")
 
-    # Minimal events DataFrame
-    events_df = non_zero[["TimeStamp"]].copy()
-    events_df["Events"] = 1  # Generic marker
     print(f"Extracted {len(events_df)} events")
     return events_df
-
-
-    return non_zero
 
 def detect_clusters_and_first_events(df_events: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Cluster events by gap > EVENT_GAP_MS, return first event per cluster."""
