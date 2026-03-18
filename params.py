@@ -103,7 +103,11 @@ sync_signal_to_first_event = True
 
 # === EVENTS / EPOCHS ===
 event_gap_ms = 5000
-skip_first_event = True
+if session == "cond":
+    skip_first_event = True
+elif session == "Recall":
+    skip_first_event = False
+
 epoch_min_length_samples = 100
 
 time_pre_event_s = 2
