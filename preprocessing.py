@@ -57,15 +57,8 @@ def clean_and_map_events(df_raw: pd.DataFrame) -> pd.DataFrame:
     # Time + events
     df_clean['time_s'] = (df_clean['TimeStamp'] / 1000.0).round(round_decimals)
     if 'Events' in df_raw.columns:
-        df_clean['Events_numeric'] = pd.to_numeric(df_raw['Events'], errors='coerce').fillna(0).astype(int)
+        df_clean['Events_numeric'] = df_raw['Events'].map(lambda x: 0 if pd.isna(x) else int(str(x)[-1]) + 1)
 
-    # Round + validate fluorescence
-    for col in fluo_cols:
-        if col in df_clean:
-            vals = df_clean[col].round(round_decimals)
-            df_clean[col] = vals
-            v = vals.dropna()
-            print(f"  {col}: [{v.min():.3f}, {v.median():.3f}, {v.max():.3f}]")
 
     return df_clean
 
@@ -91,15 +84,15 @@ def process_single_file(file_path: str = None):
     print(f"SUCCESS: {stem}!")
     return df_clean
 
-if __name__ == "__main__":
-
-    print("TESTING PREPROCESSING STANDALONE")
-    print(f"DATA_FILES: {[f.name for f in data_files]}")
-    print(f"CSV_DIR: {csv_dir}")
-
-    df_clean = process_single_file()
-    print(f"\nSUCCESS!")
-    print(f"  Shape: {df_clean.shape}")
-    print(f"  Columns: {list(df_clean.columns)}")
-    print(f"  Events: {df_clean['Events_numeric'].value_counts().to_dict()}")
-    print(f"  Saved: {csv_dir / 'cleaned_*.csv'}")
+# if __name__ == "__main__":
+#
+#     print("TESTING PREPROCESSING STANDALONE")
+#     print(f"DATA_FILES: {[f.name for f in data_files]}")
+#     print(f"CSV_DIR: {csv_dir}")
+#
+#     df_clean = process_single_file()
+#     print(f"\nSUCCESS!")
+#     print(f"  Shape: {df_clean.shape}")
+#     print(f"  Columns: {list(df_clean.columns)}")
+#     print(f"  Events: {df_clean['Events_numeric'].value_counts().to_dict()}")
+#     print(f"  Saved: {csv_dir / 'cleaned_*.csv'}")
