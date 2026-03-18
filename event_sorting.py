@@ -83,17 +83,17 @@ def detect_clusters_and_first_events(df_events: pd.DataFrame) -> tuple[pd.DataFr
     df["gap_ms"] = df["TimeStamp"].diff()
 
     # New cluster when gap > threshold
-    df["cluster_id"] = (df["gap_ms"] > event_gap_ms).cumsum()
+    df["cs_n"] = (df["gap_ms"] > event_gap_ms).cumsum()
 
-    n_clusters = df["cluster_id"].nunique()
-    print(f"Number of clusters: {n_clusters}")
+    n_clusters = df["cs_n"].nunique()
+    print(f"Number of cs: {n_clusters}")
 
     # First event per cluster (earliest TimeStamp)
     first_events = df.loc[
-        df.groupby("cluster_id")["TimeStamp"].idxmin()
-    ][["cluster_id", "TimeStamp", "Events_numeric"]].reset_index(drop=True)
+        df.groupby("cs_n")["TimeStamp"].idxmin()
+    ][["cs_n", "TimeStamp", "Events_numeric"]].reset_index(drop=True)
 
-    print(f"First events per cluster:\n{first_events}")
+    print(f"First events per cs:\n{first_events}")
     return df, first_events  # clustered_df, first_events
 
 
