@@ -3,16 +3,16 @@ import numpy as np
 from typing import Tuple, Optional
 from scipy.stats import linregress
 import pandas as pd
-from params import (CALCIUM_CHANNEL, REF_CHANNEL, BASELINE_SAMPLES,
-                    T_PRE_EVENT_S, T_POST_EVENT_S, SKIP_FIRST_EVENT,
-                    SYNC_SIGNAL_TO_FIRST_EVENT, SELECTED_CLUSTERS)
+from params import (calcium_channel, ref_channel, baseline_samples,
+                    time_pre_event_s, time_post_event_s, skip_first_event,
+                    sync_signal_to_first_event, selected_clusters)
 
 
 def select_events_from_params(first_events: pd.DataFrame) -> pd.DataFrame:
     """Apply selection rules from params.py to first_events."""
     df = first_events.copy()
-    if SELECTED_CLUSTERS is not None:
-        df = df[df["cluster_id"].isin(SELECTED_CLUSTERS)]
+    if selected_clusters is not None:
+        df = df[df["cluster_id"].isin(selected_clusters)]
     if df.empty:
         raise ValueError("No events after applying SELECTED_* filters in params.py")
     return df
@@ -20,7 +20,7 @@ def select_events_from_params(first_events: pd.DataFrame) -> pd.DataFrame:
 
 def filter_first_event(first_events: pd.DataFrame) -> pd.DataFrame:
     """Drop first cluster event if SKIP_FIRST_EVENT=True in params (spurious trigger)."""
-    if SKIP_FIRST_EVENT:
+    if skip_first_event:
         deleted_row = first_events.iloc[[0]]
         print(f"[SKIP_FIRST_EVENT] Deleted row:\n{deleted_row[['cluster_id', 'TimeStamp', 'Events']].to_string(index=False)}")
         filtered = first_events.iloc[1:].reset_index(drop=True)
@@ -31,8 +31,8 @@ def filter_first_event(first_events: pd.DataFrame) -> pd.DataFrame:
 
 def robust_fit_410_to_470(df_clean: pd.DataFrame, max_iter: int = 10, c: float = 4.685) -> np.ndarray:
     """Robust IRLS fit of REF (x) to CALCIUM (y); returns fitted410."""
-    calcium = df_clean[CALCIUM_CHANNEL].values
-    reference = df_clean[REF_CHANNEL].values
+    calcium = df_clean[calcium_channel].values
+    reference = df_clean[ref_channel].values
     beta = linregress(reference, calcium).slope
     for _ in range(max_iter):
         residuals = calcium - beta * reference
@@ -52,8 +52,8 @@ def compute_dff_and_zscore(df_clean: pd.DataFrame) -> Tuple[np.ndarray, np.ndarr
         zscore: z-score computed from dff_baseline
     """
     fitted410 = robust_fit_410_to_470(df_clean)
-    corrected = df_clean[CALCIUM_CHANNEL].values - fitted410
-    baseline = corrected[:BASELINE_SAMPLES]
+    corrected = df_clean[calcium_channel].values - fitted410
+    baseline = corrected[:baseline_samples]
     f0_baseline = np.median(baseline)
     baseline_mean = np.mean(baseline)
     baseline_std = np.std(baseline)
@@ -119,8 +119,8 @@ np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
 
     time_s = df_clean["TimeStamp"].values / 1000.0
     dt = np.median(np.diff(time_s))
-    n_pre = int(np.round(T_PRE_EVENT_S / dt))
-    n_post = int(np.round(T_POST_EVENT_S / dt))
+    n_pre = int(np.round(time_pre_event_s / dt))
+    n_post = int(np.round(time_post_event_s / dt))
     peri_t = np.arange(-n_pre, n_post) * dt
     print(f"dt={dt * 1000:.2f}ms, n_pre={n_pre}, n_post={n_post}")
 

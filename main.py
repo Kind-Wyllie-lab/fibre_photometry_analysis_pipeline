@@ -1,13 +1,13 @@
 # main.py
 from pathlib import Path
-from params import DATA_FILES
+from params import data_files
 
 
 # === RUN FLAGS: set True/False to enable/disable each pipeline stage ===
-RUN_PREPROCESSING      = True
-RUN_EVENT_SORTING      = True
-RUN_SIGNAL_PROCESSING  = True
-RUN_PLOTTING           = True
+run_preprocessing      = True
+run_event_sorting      = True
+run_signal_processing  = True
+run_plotting           = True
 
 
 def run_pipeline(file_path: str):
@@ -18,17 +18,17 @@ def run_pipeline(file_path: str):
     dff          = zscore = None
     event_times_s = None
 
-    if RUN_PREPROCESSING:
+    if run_preprocessing:
         from preprocessing import process_single_file
         df_clean = process_single_file(file_path)
 
-    if RUN_EVENT_SORTING:
+    if run_event_sorting:
         if df_clean is None:
             raise ValueError("RUN_PREPROCESSING must be True before RUN_EVENT_SORTING")
         from event_sorting import process_events
         _, first_events = process_events(df_clean, stem)
 
-    if RUN_SIGNAL_PROCESSING:
+    if run_signal_processing:
         from signal_processing import process_signals, filter_first_event
 
         epochs_dff, epochs_z, peri_t, dff, zscore = process_signals(
@@ -42,7 +42,7 @@ def run_pipeline(file_path: str):
         filtered_events = filter_first_event(first_events)
         event_times_s = filtered_events["TimeStamp"].values / 1000.0
 
-    if RUN_PLOTTING:
+    if run_plotting:
         from plotting import run_all_plots
         run_all_plots(df_clean, dff, zscore,
                       epochs_dff, epochs_z, peri_t, stem,
@@ -51,7 +51,7 @@ def run_pipeline(file_path: str):
 
 
 if __name__ == "__main__":
-    for file_path in DATA_FILES:
+    for file_path in data_files:
         print(f"\n{'=' * 50}")
         print(f"PROCESSING: {Path(file_path).name}")
         print(f"{'=' * 50}")

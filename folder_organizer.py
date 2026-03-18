@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Union
 import shutil
 from collections.abc import Iterable
-from params import ANIMAL_ID, BASE_PROJECT_PATH
+from params import animal_id, base_path
 
 def print_directory_tree(
         start_path: Union[str, Path],
@@ -72,7 +72,7 @@ def print_directory_tree(
     _print_tree(start_path, prefix, current_depth=1)
 
 
-def organize_animal_files(animal_id: str = ANIMAL_ID, base_path: Path = BASE_PROJECT_PATH) -> Path:
+def organize_animal_files(animal_id: str = animal_id, base_path: Path = base_path) -> Path:
     """
     Copy all CSV and MP4 files from paradigm folders (Recall, Hab2, Hab1, Cond)
     into a clean organized structure while preserving relative paths.
@@ -136,7 +136,7 @@ if __name__ == "__main__":
 
     def project_root(animal_id: str) -> Path:
         """Flexible animal root: '4879' ↔ 'Rat_4879'."""
-        base = BASE_PROJECT_PATH
+        base = base_path
         candidate = base / animal_id
         if candidate.exists():
             return candidate
@@ -150,8 +150,8 @@ if __name__ == "__main__":
 
         raise FileNotFoundError(f"No '{animal_id}' or '{alt_id}' in {base}")
 
-    root = project_root(ANIMAL_ID)
-    print(f"Project tree for {ANIMAL_ID} at {root}:")
+    root = project_root(animal_id)
+    print(f"Project tree for {animal_id} at {root}:")
 
     # Debug
     print("DEBUG: Root exists?", root.exists())
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         print_directory_tree(Path(__file__).parent, max_depth=2)
 
     print("\n=== DEBUG PATH STRUCTURE ===")
-    animal_num = ANIMAL_ID.replace("Rat_", "")  # "4987"
+    animal_num = animal_id.replace("Rat_", "")  # "4987"
     print(f"Animal num: '{animal_num}'")
 
     csv_paths = list(root.rglob("*.csv"))
@@ -186,7 +186,7 @@ if __name__ == "__main__":
 
     # === BATCH RENAME CSVs ===
     print("\n=== RENAMING CSVs ===")
-    animal_num = ANIMAL_ID.replace("Rat_", "")  # "4987"
+    animal_num = animal_id.replace("Rat_", "")  # "4987"
 
     PARADIGMS = {"Cond", "Hab1", "Hab2", "Recall"}
 

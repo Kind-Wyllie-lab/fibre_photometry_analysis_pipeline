@@ -4,14 +4,14 @@ import numpy as np
 from pathlib import Path
 from params import *  # SR, BASELINE_SAMPLES, etc.
 
-FLUO_COLS = ['CH1-410', 'CH1-470', 'CH1-560']
+fluo_cols = ['CH1-410', 'CH1-470', 'CH1-560']
 
 
 # Method Block 1: Loader (Add this function)
 def load_raw_fluorescence(file_path: str = None):
     """Load raw CSV with malformed headers/rows."""
     if file_path is None:
-        file_path = DATA_FILES[0]
+        file_path = data_files[0]
     if not Path(file_path).exists():
         raise ValueError(f"File not found: {file_path}")
 
@@ -51,18 +51,18 @@ def clean_and_map_events(df_raw: pd.DataFrame) -> pd.DataFrame:
     print(f"  Fluorescence cols: {fluo_cols}")
 
     df_clean = df[['TimeStamp'] + fluo_cols + ['Events']].copy()
-    df_clean.columns = ['TimeStamp'] + FLUO_COLS[:len(fluo_cols)] + ['Events']
+    df_clean.columns = ['TimeStamp'] + fluo_cols[:len(fluo_cols)] + ['Events']
     print(f"  After select: shape={df_clean.shape}")
 
     # Time + events
-    df_clean['time_s'] = (df_clean['TimeStamp'] / 1000.0).round(ROUND_DECIMALS)
+    df_clean['time_s'] = (df_clean['TimeStamp'] / 1000.0).round(round_decimals)
     if 'Events' in df_raw.columns:
         df_clean['Events_numeric'] = pd.to_numeric(df_raw['Events'], errors='coerce').fillna(0).astype(int)
 
     # Round + validate fluorescence
-    for col in FLUO_COLS:
+    for col in fluo_cols:
         if col in df_clean:
-            vals = df_clean[col].round(ROUND_DECIMALS)
+            vals = df_clean[col].round(round_decimals)
             df_clean[col] = vals
             v = vals.dropna()
             print(f"  {col}: [{v.min():.3f}, {v.median():.3f}, {v.max():.3f}]")
@@ -72,7 +72,7 @@ def clean_and_map_events(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 # Method Block 3: Saver + Processor
 def save_cleaned(df_clean: pd.DataFrame, stem: str):
-    path = CSV_DIR / f"cleaned_{stem}.csv"
+    path = csv_dir / f"cleaned_{stem}.csv"
     df_clean.to_csv(path, index=False)
     reloaded = pd.read_csv(path)
     assert reloaded.shape == df_clean.shape, "Save error"
@@ -85,7 +85,7 @@ def process_single_file(file_path: str = None):
     print("PREPROCESSING PIPELINE")
     print("=" * 50)
     df_raw = load_raw_fluorescence(file_path)
-    stem = Path(file_path or DATA_FILES[0]).stem
+    stem = Path(file_path or data_files[0]).stem
     df_clean = clean_and_map_events(df_raw)
     save_cleaned(df_clean, stem)
     print(f"SUCCESS: {stem}!")
@@ -94,12 +94,12 @@ def process_single_file(file_path: str = None):
 if __name__ == "__main__":
 
     print("TESTING PREPROCESSING STANDALONE")
-    print(f"DATA_FILES: {[f.name for f in DATA_FILES]}")
-    print(f"CSV_DIR: {CSV_DIR}")
+    print(f"DATA_FILES: {[f.name for f in data_files]}")
+    print(f"CSV_DIR: {csv_dir}")
 
     df_clean = process_single_file()
     print(f"\nSUCCESS!")
     print(f"  Shape: {df_clean.shape}")
     print(f"  Columns: {list(df_clean.columns)}")
     print(f"  Events: {df_clean['Events_numeric'].value_counts().to_dict()}")
-    print(f"  Saved: {CSV_DIR / 'cleaned_*.csv'}")
+    print(f"  Saved: {csv_dir / 'cleaned_*.csv'}")

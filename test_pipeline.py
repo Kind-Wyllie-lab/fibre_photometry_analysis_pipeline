@@ -81,8 +81,8 @@ def test_full_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(params, "PREVIEW_FIGURES", False)
 
     from main import run_pipeline
-    from params import DATA_FILES
-    run_pipeline(DATA_FILES[0])
+    from params import data_files
+    run_pipeline(data_files[0])
 
     # figures saved to real OUTPUT_DIR (resolved at import time) — just check pipeline ran
     assert True  # 4 stages completed without error = success
