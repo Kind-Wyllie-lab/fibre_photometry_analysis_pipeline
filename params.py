@@ -5,42 +5,25 @@ from typing import Literal
 # === PATHS ===
 base_path = Path(r"/media/prignane/data_fast/Fibre_photmetry")
 animal_id = "Rat_4987"  # Works for "4879" or "Rat_4879"
-
 output_dir = base_path / f"{animal_id}/output"
 output_dir.mkdir(exist_ok=True, parents=True)
 
 # === CONFIGURATION PARAMETERS ===
-session: Literal["Hab1", "Hab2", "Cond", "Recall"] = "Recall"
-events_type: Literal["fluorescence", "fluorescence_event"] = "fluorescence"
+sessions =  ["Recall", "Hab1", "Hab2", "Cond"]
 
-output_dir = base_path / f"{animal_id}/{session}/output"
-output_dir.mkdir(exist_ok=True, parents=True)
+events_type = ["fluorescence", "fluorescence_event"]
 
 fluo_csv_path = output_dir / f"{animal_id}/fluorescence.csv"
 events_csv_path = output_dir / f"{animal_id}/events.csv"
 
-def animal_output_dirs(animal_num: str) -> tuple[Path, Path]:
+def animal_output_dirs(animal_num: str, session:str):
     """Return (figures_dir, csv_dir). Create if missing."""
-    out_root = base_path / f"{animal_num}_output"
-    figs_dir = out_root / "figures"
-    csv_dir = out_root / "csv"
-
-    created = False
-    if not figs_dir.exists():
-        figs_dir.mkdir(parents=True)
-        created = True
-    if not csv_dir.exists():
-        csv_dir.mkdir(parents=True)
-        created = True
-
-    status = "created" if created else "exists"
-    print(f"{animal_num}_output/ [{status}]")
-
-    return figs_dir, csv_dir
+    out_root = base_path / f"{animal_num}/{session}/output"
+    out_root.mkdir(exist_ok=True)
+    return out_root
 
 
 # === FILES SELECTION ===
-figures_dir, csv_dir = animal_output_dirs(animal_id)
 # === SAMPLING ===
 sample_rate_hz = 60.0
 
@@ -63,10 +46,7 @@ sync_signal_to_first_event = True
 
 # === EVENTS / EPOCHS ===
 event_gap_ms = 5000
-if session == "cond":
-    skip_first_event = True
-elif session == "Recall":
-    skip_first_event = False
+
 
 epoch_min_length_samples = 100
 
