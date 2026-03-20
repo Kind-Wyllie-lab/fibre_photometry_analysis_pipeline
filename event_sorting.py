@@ -1,7 +1,7 @@
 # event_processing.py
 import pandas as pd
 from pathlib import Path
-from params import output_dir, event_gap_ms, data_files
+from params import output_dir, event_gap_ms
 
 # ADD to event_processing.py - after imports
 
@@ -98,12 +98,11 @@ def detect_clusters_and_first_events(df_events: pd.DataFrame) -> tuple[pd.DataFr
 
 
 def save_event_files(df_events: pd.DataFrame, first_events: pd.DataFrame, stem: str):
-    events_path = output_dir / f"events_sorting_{stem}.csv"
-    first_path = output_dir / f"first_cluster_events_{stem}.csv"
+    events_path = output_dir / f"processed_events_sorting.csv"
+    first_path = output_dir / f"processed_first_cluster_events.csv"
     df_events.to_csv(events_path, index=False)
     first_events.to_csv(first_path, index=False)
-    print(f"Saved events: {events_path}")
-    print(f"Saved first events: {first_path}")
+
 
 def process_events(df_clean: pd.DataFrame, stem: str):
     print("=" * 50)
@@ -115,22 +114,22 @@ def process_events(df_clean: pd.DataFrame, stem: str):
     print(f"SUCCESS: {stem} events processed!")
     return df_events_clustered, first_events
 
-if __name__ == "__main__":
-    """STANDALONE TEST - Events processing pipeline"""
-    print("TESTING EVENT PROCESSING STANDALONE")
-    print(f"DATA_FILES: {[f.name for f in data_files]}")
-
-    from preprocessing import process_single_file
-    df_clean = process_single_file()
-
-    print(f"df_clean shape: {df_clean.shape}")
-    print(f"Events_numeric: {df_clean['Events_numeric'].value_counts().to_dict()}")
-
-    stem = Path(data_files[0]).stem
-    clustered_events, first_events = process_events(df_clean, stem)
-
-    print(f"\nSUCCESS!")
-    print(f"  Clustered events: {len(clustered_events)}")
-    print(f"  First events/clusters: {len(first_events)}")
-    print(f"  Clusters: {clustered_events['cluster_id'].nunique()}")
-    print(f"  Saved: {output_dir}/events_sorting_*.csv")
+# if __name__ == "__main__":
+#     """STANDALONE TEST - Events processing pipeline"""
+#     print("TESTING EVENT PROCESSING STANDALONE")
+#     print(f"DATA_FILES: {[f.name for f in data_files]}")
+#
+#     from preprocessing import process_session
+#     df_clean = process_session()
+#
+#     print(f"df_clean shape: {df_clean.shape}")
+#     print(f"Events_numeric: {df_clean['Events_numeric'].value_counts().to_dict()}")
+#
+#     stem = Path(data_files[0]).stem
+#     clustered_events, first_events = process_events(df_clean, stem)
+#
+#     print(f"\nSUCCESS!")
+#     print(f"  Clustered events: {len(clustered_events)}")
+#     print(f"  First events/clusters: {len(first_events)}")
+#     print(f"  Clusters: {clustered_events['cluster_id'].nunique()}")
+#     print(f"  Saved: {output_dir}/events_sorting_*.csv")

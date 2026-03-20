@@ -51,7 +51,7 @@ event_gap_ms = 5000
 epoch_min_length_samples = 100
 
 time_pre_event_s = 2
-time_post_event_s = 10.0
+time_post_event_s = 10
 
 baseline_start_s = -5.0
 baseline_end_s = 0.0

@@ -4,8 +4,7 @@ from typing import Tuple, Optional
 from scipy.stats import linregress
 import pandas as pd
 from params import (calcium_channel, ref_channel, baseline_samples,
-                    time_pre_event_s, time_post_event_s, skip_first_event,
-                    sync_signal_to_first_event, selected_clusters)
+                    time_pre_event_s, time_post_event_s, selected_clusters)
 
 
 def select_events_from_params(first_events: pd.DataFrame) -> pd.DataFrame:
@@ -18,7 +17,7 @@ def select_events_from_params(first_events: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def filter_first_event(first_events: pd.DataFrame) -> pd.DataFrame:
+def filter_first_event(first_events: pd.DataFrame, skip_first_event) -> pd.DataFrame:
     """Drop first cluster event if SKIP_FIRST_EVENT=True in params (spurious trigger)."""
     if skip_first_event:
         deleted_row = first_events.iloc[[0]]
@@ -98,9 +97,9 @@ def extract_all_epochs(signal: np.ndarray, time_s: np.ndarray,
     return result
 
 
-def process_signals(df_clean: pd.DataFrame,
-                    first_events: pd.DataFrame,
-                    stem: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
+def process_signals(df_clean,
+                    first_events,
+                    stem, skip_first_event) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
 np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     """Process fiber photometry signals: motion correction, normalization, epoch extraction.
 
@@ -118,20 +117,19 @@ np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     print("=" * 50)
 
     time_s = df_clean["TimeStamp"].values / 1000.0
-    dt = np.median(np.diff(time_s))
-    n_pre = int(np.round(time_pre_event_s / dt))
-    n_post = int(np.round(time_post_event_s / dt))
-    peri_t = np.arange(-n_pre, n_post) * dt
-    print(f"dt={dt * 1000:.2f}ms, n_pre={n_pre}, n_post={n_post}")
+    # dt = np.median(np.diff(time_s))
+    n_pre = time_pre_event_s
+    n_post = time_post_event_s
+    peri_t = np.arange(-n_pre, n_post)
 
     dff_fitted, dff_baseline, zscore = compute_dff_and_zscore(df_clean)
 
     events_selected = select_events_from_params(first_events)
-    events_to_use = filter_first_event(events_selected)
+    events_to_use = filter_first_event(events_selected, skip_first_event)
     if events_to_use.empty:
         raise ValueError("No events remaining after selection/filtering — check params")
 
-    print(events_to_use[["cs_n", "TimeStamp", "Events"]].to_string())
+    print(events_to_use[["cs_n", "TimeStamp", "Events_numeric"]].to_string())
     event_times_s = events_to_use["TimeStamp"].values / 1000.0
 
     epochs_dff = extract_all_epochs(dff_baseline, time_s, event_times_s, n_pre, n_post)
@@ -145,10 +143,10 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, "/Users/Lou/PycharmProjects/Fibre_photometry_M2")
 
-    from preprocessing import process_single_file
+    from preprocessing import process_session
     from event_sorting import process_events
 
-    input_df = process_single_file()
+    input_df = process_session()
     input_stem = "Fluorescence"
     _, input_first_events = process_events(input_df, input_stem)
     process_signals(input_df, input_first_events, input_stem)

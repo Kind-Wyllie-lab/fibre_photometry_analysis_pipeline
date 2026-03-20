@@ -1,4 +1,6 @@
 # Imports Block (Add to preprocessing.py - top)
+import os.path
+
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -10,8 +12,6 @@ fluo_cols = ['CH1-410', 'CH1-470', 'CH1-560']
 # Method Block 1: Loader (Add this function)
 def load_raw_fluorescence(file_path: str = None):
     """Load raw CSV with malformed headers/rows."""
-    if file_path is None:
-        file_path = data_files[0]
     if not Path(file_path).exists():
         raise ValueError(f"File not found: {file_path}")
 
@@ -64,24 +64,17 @@ def clean_and_map_events(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 # Method Block 3: Saver + Processor
-def save_cleaned(df_clean: pd.DataFrame, stem: str):
-    path = csv_dir / f"cleaned_{stem}.csv"
+def save_cleaned(df_clean, output_dir):
+    path = output_dir / f"cleaned_data.csv"
     df_clean.to_csv(path, index=False)
-    reloaded = pd.read_csv(path)
-    assert reloaded.shape == df_clean.shape, "Save error"
-    print(f"Saved: cleaned_{stem}.csv")
 
 
-def process_single_file(file_path: str = None):
+def process_session(raw_data_path, output_dir):
     """Full preprocessing pipeline for single file."""
-    print("=" * 50)
-    print("PREPROCESSING PIPELINE")
-    print("=" * 50)
-    df_raw = load_raw_fluorescence(file_path)
-    stem = Path(file_path or data_files[0]).stem
+    raw_fluorescence_csv_path = os.path.join(raw_data_path, 'Fluorescence.csv')
+    df_raw = load_raw_fluorescence(raw_fluorescence_csv_path)
     df_clean = clean_and_map_events(df_raw)
-    save_cleaned(df_clean, stem)
-    print(f"SUCCESS: {stem}!")
+    save_cleaned(df_clean, output_dir)
     return df_clean
 
 # if __name__ == "__main__":

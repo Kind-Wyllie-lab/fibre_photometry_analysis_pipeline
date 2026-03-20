@@ -144,11 +144,10 @@ def plot_full_trace(df_clean: pd.DataFrame, dff_fitted: np.ndarray,
         _set_ytick_params(ax)
 
     n_events = len(event_times_plot)
-    skipped_label = " (first skipped)" if skip_first_event and event_times_s is not None else ""
     zero_label = f"t=0 at first TTL ({origin:.2f}s)" if t_zero_s is not None else "t=0 at recording start"
     axes[0].set_title(
         f"Full session — motion-corrected signal ({stem}) "
-        f"| {n_events} events{skipped_label} | {zero_label}"
+        f"| {n_events} events | {zero_label}"
     )
     axes[-1].set_xlabel("Time from first TTL pulse (s)")
     _set_xtick_params(axes[-1])
@@ -184,7 +183,6 @@ def plot_peri_event_average(peri_t: np.ndarray, epochs_dff: np.ndarray,
         ax.set_title(
             f"Peri-event average — {ylabel} "
             f"(n={len(epochs)} trials"
-            f"{', first skipped' if skip_first_event else ''})"
         )
         ax.legend()
         ax.grid(alpha=0.3)
@@ -269,7 +267,6 @@ def plot_peri_event_heatmaps(peri_t: np.ndarray,
         ax.set_ylabel("Trial")
         ax.set_title(
             f"Peri-event heatmap — {y_label} (n={n_trials} trials"
-            f"{', first skipped' if skip_first_event else ''})"
         )
         fig.colorbar(im, ax=ax, label=y_label)
 
@@ -322,11 +319,11 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, "/Users/Lou/PycharmProjects/Fibre_photometry_M2")
 
-    from preprocessing import process_single_file
+    from preprocessing import process_session
     from event_sorting import process_events
     from signal_processing import process_signals
 
-    input_df = process_single_file()
+    input_df = process_session()
     input_stem = "Fluorescence"
 
     _, input_first_events = process_events(input_df, input_stem)
