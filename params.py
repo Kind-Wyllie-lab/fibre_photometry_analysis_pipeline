@@ -16,6 +16,9 @@ events_type: Literal["fluorescence", "fluorescence_event"] = "fluorescence"
 output_dir = base_path / f"{animal_id}/{session}/output"
 output_dir.mkdir(exist_ok=True, parents=True)
 
+fluo_csv_path = output_dir / f"{animal_id}/fluorescence.csv"
+events_csv_path = output_dir / f"{animal_id}/events.csv"
+
 def animal_output_dirs(animal_num: str) -> tuple[Path, Path]:
     """Return (figures_dir, csv_dir). Create if missing."""
     out_root = base_path / f"{animal_num}_output"
@@ -36,53 +39,10 @@ def animal_output_dirs(animal_num: str) -> tuple[Path, Path]:
     return figs_dir, csv_dir
 
 
-def select_data_files(recording_type: str, events_type: str, animal_id: str = animal_id,
-                      base_path: Path = base_path) -> list[Path]:
-    """Select fluorescence CSV from animalid_cleaned folder.
-
-    - 'fluorescence': picks aligned/regular file (EXCLUDES *-unaligned.csv)
-    - 'fluorescence_event': any fluorescence CSV (first match)
-    """
-    cleaned_dir = base_path / f"{animal_id}"
-    root_dir = cleaned_dir / recording_type
-
-    print(f"DEBUG: Looking in '{root_dir}' (events: {events_type})")
-
-    all_files = list(root_dir.rglob("*")) if root_dir.exists() else []
-
-    # Case-insensitive fluorescence search
-    data_files = sorted([f for f in all_files if
-                         ('fluorescence' in f.name.lower() or 'fluo' in f.name.lower())
-                         and f.suffix.lower() == '.csv'])
-
-    if not data_files:
-        print(f"Warning: No fluorescence CSV under {root_dir}")
-        return []
-
-    print(f"Available: {[f.name for f in data_files]}")
-
-    # Selection by TYPE_OF_EVENTS
-    if events_type == "fluorescence":
-        # EXCLUDE unaligned - pick first NON-unaligned
-        selected = next((f for f in data_files if "unaligned" not in f.name.lower()), None)
-        if selected is None:
-            print("Warning: No non-unaligned file found, using first")
-            selected = data_files[0]
-        print(f"Selected (no-unaligned): {selected.name}")
-    else:  # fluorescence_event
-        selected = data_files[0]
-        print(f"Selected (first): {selected.name}")
-
-    return [selected]
-
-
-
 # === FILES SELECTION ===
-data_files = select_data_files(session, events_type)
 figures_dir, csv_dir = animal_output_dirs(animal_id)
 # === SAMPLING ===
 sample_rate_hz = 60.0
-dt_ms = 1000.0 / sample_rate_hz #TODO clarify
 
 # === PREPROCESSING ===
 skiprows_json = 1
