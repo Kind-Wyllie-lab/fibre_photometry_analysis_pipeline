@@ -9,7 +9,7 @@ output_dir = base_path / f"{animal_id}/output"
 output_dir.mkdir(exist_ok=True, parents=True)
 
 # === CONFIGURATION PARAMETERS ===
-sessions =  ["Recall", "Hab1", "Hab2", "Cond"]
+sessions =  ["Recall"]
 
 events_type = ["fluorescence", "fluorescence_event"]
 
@@ -71,8 +71,8 @@ figure_format = "png"
 figure_size_trace = (14, 6)
 figure_size_peri = (10, 6)
 
-save_figures = True
-preview_figures = False
+save_figures = False
+preview_figures = True
 #FIGURES_DIR = OUTPUT_DIR / "figures"
 #FIGURES_DIR.mkdir(exist_ok=True, parents=True)
 

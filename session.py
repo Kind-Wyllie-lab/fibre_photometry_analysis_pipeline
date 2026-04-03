@@ -9,7 +9,7 @@ import pandas as pd
 from preprocessing import process_session
 from event_sorting import process_events
 from signal_processing import process_signals, filter_first_event
-from plotting import run_all_plots
+from plotting import PhotometryPlotter
 
 
 @dataclass
@@ -225,17 +225,21 @@ class PhotometrySession:
         if self.df_clean is None or self.dff_fitted is None or self.zscore is None:
             raise ValueError("Signal processing must be run before plotting.")
 
-        run_all_plots(
-            self.df_clean,
-            self.dff_fitted,
-            self.zscore,
-            self.epochs_dff,
-            self.epochs_z,
-            self.peri_t,
-            str(self.animal_path),
+        session_stem = f"{self.animal}_{self.session_name}"
+
+        plotter = PhotometryPlotter(
+            df_clean=self.df_clean,
+            dff_fitted=self.dff_fitted,
+            zscore=self.zscore,
+            epochs_dff=self.epochs_dff,
+            epochs_z=self.epochs_z,
+            peri_t=self.peri_t,
+            stem=session_stem,
             event_times_s=self.event_times_s,
             t_zero_s=self.t_zero_s,
+            filtered_events=self.events_to_use,
         )
+        plotter.run_all()
 
     def run(self) -> "PhotometrySession":
         """

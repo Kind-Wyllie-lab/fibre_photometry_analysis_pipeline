@@ -4,7 +4,7 @@ from typing import Tuple, Optional
 from scipy.stats import linregress
 import pandas as pd
 from params import (calcium_channel, ref_channel, baseline_samples,
-                    time_pre_event_s, time_post_event_s, selected_clusters)
+                    time_pre_event_s, time_post_event_s, selected_clusters, sample_rate_hz)
 
 
 def select_events_from_params(first_events: pd.DataFrame) -> pd.DataFrame:
@@ -135,7 +135,6 @@ np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     epochs_dff = extract_all_epochs(dff_baseline, time_s, event_times_s, n_pre, n_post)
     epochs_z = extract_all_epochs(zscore, time_s, event_times_s, n_pre, n_post)
 
-    print(f"SUCCESS: {stem} signals processed!")
     return epochs_dff, epochs_z, peri_t, dff_baseline, dff_fitted, zscore, events_to_use
 
 
