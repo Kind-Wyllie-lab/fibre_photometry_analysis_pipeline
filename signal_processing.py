@@ -118,8 +118,8 @@ np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
 
     time_s = df_clean["TimeStamp"].values / 1000.0
     # dt = np.median(np.diff(time_s))
-    n_pre = time_pre_event_s
-    n_post = time_post_event_s
+    n_pre = int(time_pre_event_s * sample_rate_hz)
+    n_post = int(time_post_event_s * sample_rate_hz)
     peri_t = np.arange(-n_pre, n_post)
 
     dff_fitted, dff_baseline, zscore = compute_dff_and_zscore(df_clean)
