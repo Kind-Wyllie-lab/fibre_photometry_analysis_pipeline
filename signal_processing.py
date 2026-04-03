@@ -501,8 +501,7 @@ def extract_epoched_data(signal: np.ndarray, time_s: np.ndarray,
     return result
 
 
-def process_signals(df_clean,
-                    stem, skip_first_event) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
+def process_signals(df_clean) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
 np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     """Process fiber photometry signals: motion correction, normalization, epoch extraction.
 
@@ -518,9 +517,9 @@ np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
 
     # time_s = df_clean["TimeStamp"].values / 1000.0
 
-    n_pre = int(time_pre_event_s * sample_rate_hz)
-    n_post = int(time_post_event_s * sample_rate_hz)
-    peri_t = np.arange(-n_pre, n_post)
+    # n_pre = int(time_pre_event_s * sample_rate_hz)
+    # n_post = int(time_post_event_s * sample_rate_hz)
+    # peri_t = np.arange(-n_pre, n_post)
 
     photometry_results = compute_photometry_dff_and_zscore(
         df_clean=df_clean,
@@ -538,6 +537,7 @@ np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
         baseline_asymmetry_penalty=0.01,
     )
 
+    return photometry_results
     # events_selected = select_events_from_params(first_events)
     # events_to_use = filter_first_event(events_selected, skip_first_event)
     # if events_to_use.empty:
@@ -548,7 +548,7 @@ np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
     # epochs_dff = extract_epoched_data(dff_baseline, time_s, event_times_s, n_pre, n_post)
     # epochs_z = extract_epoched_data(zscore, time_s, event_times_s, n_pre, n_post)
 
-    return epochs_dff, epochs_z, peri_t, dff_baseline, dff_fitted, zscore, events_to_use
+    # return epochs_dff, epochs_z, peri_t, dff_baseline, dff_fitted, zscore, events_to_use
 
 
 if __name__ == "__main__":
@@ -558,7 +558,7 @@ if __name__ == "__main__":
     from preprocessing import extract_session_raw_data
     from event_sorting import process_events
 
-    input_df = extract_session_raw_data()
+    raw_fluorescence = extract_session_raw_data()
     input_stem = "Fluorescence"
-    _, input_first_events = process_events(input_df, input_stem)
-    process_signals(input_df, input_first_events, input_stem)
+    # _, input_first_events = process_events(input_df, input_stem)
+    process_signals(raw_fluorescence)
