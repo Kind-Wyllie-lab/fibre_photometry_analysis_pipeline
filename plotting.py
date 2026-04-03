@@ -6,6 +6,8 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib import colors as mcolors
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -112,6 +114,8 @@ class PhotometryPlotter:
     t_zero_s: Optional[float] = None
     filtered_events: Optional[pd.DataFrame] = None
     figure_output_directory: str = './'
+    peri_event_plot_mode: str = "average"
+    trial_alpha: float = 0.9
 
     def __post_init__(self) -> None:
         """
@@ -165,6 +169,13 @@ class PhotometryPlotter:
         if self.epochs_dff.shape[1] != len(self.peri_t):
             raise ValueError(
                 f"peri_t length {len(self.peri_t)} != epoch timepoints {self.epochs_dff.shape[1]}"
+            )
+
+        valid_peri_event_plot_modes = {"average", "trials"}
+        if self.peri_event_plot_mode not in valid_peri_event_plot_modes:
+            raise ValueError(
+                f"peri_event_plot_mode must be one of {sorted(valid_peri_event_plot_modes)}, "
+                f"got {self.peri_event_plot_mode!r}"
             )
 
     @property
@@ -227,6 +238,48 @@ class PhotometryPlotter:
 
         if not self.preview_figures_enabled:
             plt.close(fig)
+
+    def _build_progressive_lightness_palette(
+            self,
+            base_color: str,
+            n_colors: int,
+            min_lightness_mix: float = 0.0,
+            max_lightness_mix: float = 0.75,
+    ) -> list[tuple[float, float, float]]:
+        """
+        Generate a sequential palette from dark to light using a base color.
+
+        Parameters
+        ----------
+        base_color : str
+            Matplotlib-compatible base color specification.
+        n_colors : int
+            Number of colors to generate.
+        min_lightness_mix : float, default=0.0
+            Fraction of white mixed into the darkest color.
+        max_lightness_mix : float, default=0.75
+            Fraction of white mixed into the lightest color.
+
+        Returns
+        -------
+        list of tuple of float
+            RGB colors ordered from darkest to lightest.
+        """
+        if n_colors <= 0:
+            return []
+
+        base_rgb = np.array(mcolors.to_rgb(base_color), dtype=float)
+        white_rgb = np.ones(3, dtype=float)
+
+        if n_colors == 1:
+            return [tuple(base_rgb)]
+
+        mix_values = np.linspace(min_lightness_mix, max_lightness_mix, n_colors)
+        palette = [
+            tuple((1.0 - mix_value) * base_rgb + mix_value * white_rgb)
+            for mix_value in mix_values
+        ]
+        return palette
 
     def _set_xtick_params(self, ax: plt.Axes) -> None:
         """
@@ -294,13 +347,13 @@ class PhotometryPlotter:
 
     def _build_peri_event_long_dataframe(self) -> pd.DataFrame:
         """
-        Build a long-form dataframe for seaborn peri-event plotting.
+        Build a long-form dataframe for peri-event plotting.
 
         Returns
         -------
         pandas.DataFrame
-            Long-format dataframe with one row per trial-timepoint-signal value.
-            Columns are ``trial``, ``time_s``, ``signal_kind``, and ``signal_value``.
+            Long-format dataframe with columns ``trial``, ``time_s``,
+            ``signal_value``, and ``signal_kind``.
         """
         n_trials, n_timepoints = self.epochs_dff.shape
         if self.epochs_z.shape != (n_trials, n_timepoints):
@@ -314,19 +367,17 @@ class PhotometryPlotter:
 
         trial_index = np.arange(1, n_trials + 1, dtype=int)
 
-        epochs_dff_wide = pd.DataFrame(self.epochs_dff, index=trial_index, columns=self.peri_t)
-        epochs_dff_wide.index.name = "trial"
         epochs_dff_long = (
-            epochs_dff_wide
+            pd.DataFrame(self.epochs_dff, index=trial_index, columns=self.peri_t)
+            .rename_axis(index="trial")
             .reset_index()
             .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
             .assign(signal_kind="ΔF/F")
         )
 
-        epochs_z_wide = pd.DataFrame(self.epochs_z, index=trial_index, columns=self.peri_t)
-        epochs_z_wide.index.name = "trial"
         epochs_z_long = (
-            epochs_z_wide
+            pd.DataFrame(self.epochs_z, index=trial_index, columns=self.peri_t)
+            .rename_axis(index="trial")
             .reset_index()
             .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
             .assign(signal_kind="Z-score")
@@ -334,10 +385,10 @@ class PhotometryPlotter:
 
         peri_event_long_dataframe = pd.concat(
             [epochs_dff_long, epochs_z_long],
-            axis=0,
             ignore_index=True,
         )
         peri_event_long_dataframe["time_s"] = peri_event_long_dataframe["time_s"].astype(float)
+        peri_event_long_dataframe["trial"] = peri_event_long_dataframe["trial"].astype(int)
 
         return peri_event_long_dataframe
 
@@ -461,14 +512,72 @@ class PhotometryPlotter:
         fig.tight_layout()
         self._finalize_figure(fig, f"dff_zscore_traces_{self.stem}")
 
+    def plot_peri_event_trials(self) -> None:
+        """
+        Plot all peri-event trials individually with a dark-to-light progression.
+
+        Notes
+        -----
+        Trial order is preserved from first to last extracted event. The first trial
+        is plotted with the darkest color and the last trial with the lightest color.
+        """
+        peri_event_long_dataframe = self._build_peri_event_long_dataframe()
+        n_trials = self.epochs_dff.shape[0]
+
+        fig, axes = plt.subplots(2, 1, figsize=figure_size_peri, sharex=True)
+
+        axis_signal_pairs = [
+            (axes[0], "ΔF/F", color_dff),
+            (axes[1], "Z-score", color_zscore),
+        ]
+
+        for axis, signal_kind, base_color in axis_signal_pairs:
+            signal_subset = peri_event_long_dataframe.loc[
+                peri_event_long_dataframe["signal_kind"] == signal_kind
+                ].copy()
+
+            trial_palette = self._build_progressive_lightness_palette(
+                base_color=base_color,
+                n_colors=n_trials,
+                min_lightness_mix=0.0,
+                max_lightness_mix=0.8,
+            )
+            trial_to_color = {
+                trial_number: trial_palette[trial_number - 1]
+                for trial_number in range(1, n_trials + 1)
+            }
+
+            sns.lineplot(
+                data=signal_subset,
+                x="time_s",
+                y="signal_value",
+                hue="trial",
+                units="trial",
+                estimator=None,
+                palette=trial_to_color,
+                linewidth=1.2,
+                alpha=self.trial_alpha,
+                legend=False,
+                ax=axis,
+            )
+
+            axis.axvline(0, color=color_event_onset, ls="--", lw=0.8)
+            axis.set_ylabel(signal_kind)
+            axis.set_title(
+                f"Peri-event individual trials — {signal_kind} (n={n_trials} trials)"
+            )
+            axis.grid(alpha=0.3)
+            self._set_ytick_params(axis)
+
+        axes[-1].set_xlabel("Time from event (s)")
+        self._set_xtick_params(axes[-1])
+
+        fig.tight_layout()
+        self._finalize_figure(fig, f"peri_event_trials_{self.stem}")
+
     def plot_peri_event_average(self) -> None:
         """
         Plot trial-averaged peri-event ΔF/F and z-score using seaborn on long-form data.
-
-        Returns
-        -------
-        None
-            The figure is finalized according to the plotting configuration.
         """
         peri_event_long_dataframe = self._build_peri_event_long_dataframe()
 
@@ -584,6 +693,27 @@ class PhotometryPlotter:
         fig.tight_layout()
         self._finalize_figure(fig, f"peri_event_heatmaps_{self.stem}")
 
+    def plot_peri_event_summary(self) -> None:
+        """
+        Plot peri-event data using the configured display mode.
+
+        Raises
+        ------
+        ValueError
+            If the configured peri-event plot mode is invalid.
+        """
+        if self.peri_event_plot_mode == "average":
+            self.plot_peri_event_average()
+            return
+
+        if self.peri_event_plot_mode == "trials":
+            self.plot_peri_event_trials()
+            return
+
+        raise ValueError(
+            f"Unsupported peri_event_plot_mode: {self.peri_event_plot_mode!r}"
+        )
+
     def run_all(self) -> None:
         """
         Generate all standard figures for a session.
@@ -594,7 +724,7 @@ class PhotometryPlotter:
 
         self.plot_full_fluorescence()
         self.plot_full_trace()
-        self.plot_peri_event_average()
+        self.plot_peri_event_summary()
         self.plot_peri_event_heatmaps()
 
         if self.save_figures_enabled:
