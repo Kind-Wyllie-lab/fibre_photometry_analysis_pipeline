@@ -16,8 +16,8 @@ def tmp_output(tmp_path, monkeypatch):
 
 # ── 1. Preprocessing ─────────────────────────────────────────────────────────
 def test_preprocessing_runs():
-    from preprocessing import process_session
-    df = process_session()
+    from preprocessing import extract_session_raw_data
+    df = extract_session_raw_data()
     assert not df.empty
     assert "Events_numeric" in df.columns
     assert "time_s" in df.columns
@@ -26,9 +26,9 @@ def test_preprocessing_runs():
 
 # ── 2. Event sorting ─────────────────────────────────────────────────────────
 def test_event_sorting_runs():
-    from preprocessing import process_session
+    from preprocessing import extract_session_raw_data
     from event_sorting import process_events
-    df_clean = process_session()
+    df_clean = extract_session_raw_data()
     df_events, first_events = process_events(df_clean, "Fluorescence")
     assert not first_events.empty
     assert "cluster_id" in first_events.columns
@@ -37,10 +37,10 @@ def test_event_sorting_runs():
 
 # ── 3. Signal processing ─────────────────────────────────────────────────────
 def test_signal_processing_runs():
-    from preprocessing import process_session
+    from preprocessing import extract_session_raw_data
     from event_sorting import process_events
     from signal_processing import process_signals
-    df_clean = process_session()
+    df_clean = extract_session_raw_data()
     _, first_events = process_events(df_clean, "Fluorescence")
     epochs_dff, epochs_z, peri_t = process_signals(df_clean, first_events, "Fluorescence")
     assert epochs_dff.ndim == 2       # (n_trials, n_timepoints)
@@ -55,14 +55,14 @@ def test_plotting_saves_figures(tmp_path, monkeypatch):
     monkeypatch.setattr(params, "PREVIEW_FIGURES", False)  # never open windows
     monkeypatch.setattr(params, "OUTPUT_DIR", tmp_path)
 
-    from preprocessing import process_session
+    from preprocessing import extract_session_raw_data
     from event_sorting import process_events
     from signal_processing import (process_signals,
                                    compute_corrected_signal,
                                    compute_dff_and_zscore)
     from plotting import run_all_plots
 
-    df_clean = process_session()
+    df_clean = extract_session_raw_data()
     _, first_events = process_events(df_clean, "Fluorescence")
     epochs_dff, epochs_z, peri_t = process_signals(df_clean, first_events, "Fluorescence")
     corrected = compute_corrected_signal(df_clean)

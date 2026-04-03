@@ -6,7 +6,7 @@ from typing import Optional
 
 import pandas as pd
 
-from preprocessing import process_session
+from preprocessing import extract_session_raw_data
 from event_sorting import process_events
 from signal_processing import process_signals, filter_first_event
 from plotting import PhotometryPlotter
@@ -149,7 +149,7 @@ class PhotometrySession:
             return False
         return False
 
-    def run_preprocessing_stage(self) -> pd.DataFrame:
+    def raw_data_preprocessing(self) -> pd.DataFrame:
         """
         Execute preprocessing for the current session.
 
@@ -158,10 +158,10 @@ class PhotometrySession:
         pandas.DataFrame
             Cleaned fluorescence dataframe.
         """
-        self.df_clean = process_session(str(self.raw_data_path), self.output_directory)
+        self.df_clean = extract_session_raw_data(str(self.raw_data_path), self.output_directory)
         return self.df_clean
 
-    def run_event_sorting_stage(self) -> pd.DataFrame:
+    def ttl_events_processing(self) -> pd.DataFrame:
         """
         Execute event sorting for the current session.
 
@@ -180,7 +180,7 @@ class PhotometrySession:
         _, self.first_events = process_events(self.df_clean, self.output_directory)
         return self.first_events
 
-    def run_signal_processing_stage(self) -> None:
+    def fluorescence_processing(self) -> None:
         """
         Execute signal processing and peri-event extraction for the current session.
 
@@ -257,13 +257,13 @@ class PhotometrySession:
         print("=" * 80)
 
         if self.run_preprocessing:
-            self.run_preprocessing_stage()
+            self.raw_data_preprocessing()
 
         if self.run_event_sorting:
-            self.run_event_sorting_stage()
+            self.ttl_events_processing()
 
         if self.run_signal_processing:
-            self.run_signal_processing_stage()
+            self.fluorescence_processing()
 
         if self.run_plotting:
             self.run_plotting_stage()

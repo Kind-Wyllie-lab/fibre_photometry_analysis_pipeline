@@ -69,7 +69,7 @@ def save_cleaned(df_clean, output_dir):
     df_clean.to_csv(path, index=False)
 
 
-def process_session(raw_data_path, output_dir):
+def extract_session_raw_data(raw_data_path, output_dir):
     """Full preprocessing pipeline for single file."""
     raw_fluorescence_csv_path = os.path.join(raw_data_path, 'Fluorescence.csv')
     df_raw = load_raw_fluorescence(raw_fluorescence_csv_path)

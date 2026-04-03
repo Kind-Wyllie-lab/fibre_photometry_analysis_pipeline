@@ -5,8 +5,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
+import pandas as pd
+
 from params import animal_output_dirs
 from session import PhotometrySession
+from group_analysis import (
+    build_session_peri_event_long_dataframe,
+    PhotometryGroupAnalyzer,
+)
 
 
 @dataclass
@@ -64,6 +70,44 @@ class PhotometryPipeline:
         return sorted(
             [name for name in os.listdir(base_directory) if name.startswith("Rat")]
         )
+
+    def build_group_peri_event_dataframe(self) -> pd.DataFrame:
+        """
+        Build a concatenated long-form peri-event dataframe from all completed sessions.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Long-format dataframe across all processed animal/session pairs.
+
+        Raises
+        ------
+        ValueError
+            If no session contains peri-event outputs.
+        """
+        session_level_dataframes = []
+
+        for completed_session in self.results:
+            if (
+                    completed_session.epochs_dff is None
+                    or completed_session.epochs_z is None
+                    or completed_session.peri_t is None
+            ):
+                continue
+
+            session_dataframe = build_session_peri_event_long_dataframe(
+                animal=completed_session.animal,
+                session_name=completed_session.session_name,
+                peri_t=completed_session.peri_t,
+                epochs_dff=completed_session.epochs_dff,
+                epochs_z=completed_session.epochs_z,
+            )
+            session_level_dataframes.append(session_dataframe)
+
+        if not session_level_dataframes:
+            raise ValueError("No peri-event session outputs available for group analysis")
+
+        return pd.concat(session_level_dataframes, ignore_index=True)
 
     def build_session(self, animal: str, session_name: str) -> PhotometrySession:
         """
