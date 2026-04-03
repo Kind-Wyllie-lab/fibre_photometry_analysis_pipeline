@@ -1,5 +1,3 @@
-# Replace plotting.py imports with this block
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,6 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
+import seaborn as sns
 
 from params import (
     save_figures,
@@ -293,6 +292,55 @@ class PhotometryPlotter:
         )
         ax.yaxis.set_major_locator(plt.MaxNLocator(ytick_nbins))
 
+    def _build_peri_event_long_dataframe(self) -> pd.DataFrame:
+        """
+        Build a long-form dataframe for seaborn peri-event plotting.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Long-format dataframe with one row per trial-timepoint-signal value.
+            Columns are ``trial``, ``time_s``, ``signal_kind``, and ``signal_value``.
+        """
+        n_trials, n_timepoints = self.epochs_dff.shape
+        if self.epochs_z.shape != (n_trials, n_timepoints):
+            raise ValueError(
+                f"epochs_z shape {self.epochs_z.shape} does not match epochs_dff shape {self.epochs_dff.shape}"
+            )
+        if len(self.peri_t) != n_timepoints:
+            raise ValueError(
+                f"peri_t length {len(self.peri_t)} != number of epoch timepoints {n_timepoints}"
+            )
+
+        trial_index = np.arange(1, n_trials + 1, dtype=int)
+
+        epochs_dff_wide = pd.DataFrame(self.epochs_dff, index=trial_index, columns=self.peri_t)
+        epochs_dff_wide.index.name = "trial"
+        epochs_dff_long = (
+            epochs_dff_wide
+            .reset_index()
+            .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
+            .assign(signal_kind="ΔF/F")
+        )
+
+        epochs_z_wide = pd.DataFrame(self.epochs_z, index=trial_index, columns=self.peri_t)
+        epochs_z_wide.index.name = "trial"
+        epochs_z_long = (
+            epochs_z_wide
+            .reset_index()
+            .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
+            .assign(signal_kind="Z-score")
+        )
+
+        peri_event_long_dataframe = pd.concat(
+            [epochs_dff_long, epochs_z_long],
+            axis=0,
+            ignore_index=True,
+        )
+        peri_event_long_dataframe["time_s"] = peri_event_long_dataframe["time_s"].astype(float)
+
+        return peri_event_long_dataframe
+
     def _get_heatmap_trial_labels(self, n_trials: int) -> list[str]:
         """
         Infer heatmap trial labels from the filtered events table when available.
@@ -415,39 +463,53 @@ class PhotometryPlotter:
 
     def plot_peri_event_average(self) -> None:
         """
-        Plot trial-averaged peri-event ΔF/F and z-score with SEM envelopes.
+        Plot trial-averaged peri-event ΔF/F and z-score using seaborn on long-form data.
+
+        Returns
+        -------
+        None
+            The figure is finalized according to the plotting configuration.
         """
+        peri_event_long_dataframe = self._build_peri_event_long_dataframe()
+
         fig, axes = plt.subplots(2, 1, figsize=figure_size_peri, sharex=True)
 
-        peri_specs = [
-            (self.epochs_dff, "ΔF/F"),
-            (self.epochs_z, "Z-score"),
+        axis_signal_pairs = [
+            (axes[0], "ΔF/F", color_dff),
+            (axes[1], "Z-score", color_zscore),
         ]
 
-        for ax, (epochs, y_label) in zip(axes, peri_specs):
-            mean_signal = epochs.mean(axis=0)
-            sem_signal = epochs.std(axis=0, ddof=0) / np.sqrt(len(epochs))
+        for axis, signal_kind, signal_color in axis_signal_pairs:
+            signal_subset = peri_event_long_dataframe.loc[
+                peri_event_long_dataframe["signal_kind"] == signal_kind
+                ]
 
-            ax.plot(
-                self.peri_t,
-                mean_signal,
-                color=color_peri_mean,
-                lw=lw_peri_mean,
-                label=f"Mean {y_label}",
+            sns.lineplot(
+                data=signal_subset,
+                x="time_s",
+                y="signal_value",
+                estimator="mean",
+                errorbar="se",
+                color=signal_color,
+                linewidth=lw_peri_mean,
+                ax=axis,
+                label=f"Mean {signal_kind}",
             )
-            ax.fill_between(
-                self.peri_t,
-                mean_signal - sem_signal,
-                mean_signal + sem_signal,
-                alpha=alpha_sem_fill,
-                color=color_peri_mean,
+
+            axis.axvline(
+                0,
+                color=color_event_onset,
+                ls="--",
+                lw=0.8,
+                label="Event onset",
             )
-            ax.axvline(0, color=color_event_onset, ls="--", lw=0.8, label="Event onset")
-            ax.set_ylabel(y_label)
-            ax.set_title(f"Peri-event average — {y_label} (n={len(epochs)} trials)")
-            ax.legend()
-            ax.grid(alpha=0.3)
-            self._set_ytick_params(ax)
+            axis.set_ylabel(signal_kind)
+            axis.set_title(
+                f"Peri-event average — {signal_kind} (n={self.epochs_dff.shape[0]} trials)"
+            )
+            axis.grid(alpha=0.3)
+            self._set_ytick_params(axis)
+            axis.legend()
 
         axes[-1].set_xlabel("Time from event (s)")
         self._set_xtick_params(axes[-1])
