@@ -16,7 +16,6 @@ from params import (
     figure_format,
     save_figures,
     preview_figures,
-    color_dff,
     color_zscore,
     color_event_onset,
     lw_peri_mean,
@@ -299,6 +298,243 @@ class PhotometryGroupAnalyzer:
         group_summary_dataframe["event_index"] = event_index
 
         return group_summary_dataframe
+
+    def compute_animal_event_auc(
+            self,
+            auc_window_start_s: float = 0.0,
+            auc_window_end_s: float = 5.0,
+            max_event_index: int = 12,
+            session_name: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Compute peri-event z-score area under the curve for each animal and event.
+
+        The AUC is computed over the interval from `auc_window_start_s` to
+        `auc_window_end_s` using trapezoidal integration.
+
+        Parameters
+        ----------
+        auc_window_start_s : float, default=0.0
+            Start time of the post-trigger integration window in seconds.
+        auc_window_end_s : float, default=5.0
+            End time of the post-trigger integration window in seconds.
+        max_event_index : int, default=12
+            Maximum event index to retain.
+        session_name : str, optional
+            If provided, restrict computation to one session.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Dataframe with one row per animal and event, containing the computed AUC.
+
+        Raises
+        ------
+        ValueError
+            If no samples are available in the requested integration window.
+        """
+        auc_input_dataframe = self.session_level_peri_event_dataframe.copy()
+
+        if session_name is not None:
+            auc_input_dataframe = auc_input_dataframe.loc[
+                auc_input_dataframe["session_name"] == session_name
+                ].copy()
+
+        auc_input_dataframe = auc_input_dataframe.loc[
+            (auc_input_dataframe["time_s"] >= auc_window_start_s)
+            & (auc_input_dataframe["time_s"] <= auc_window_end_s)
+            & (auc_input_dataframe["event_index"] >= 1)
+            & (auc_input_dataframe["event_index"] <= max_event_index)
+            ].copy()
+
+        if auc_input_dataframe.empty:
+            raise ValueError(
+                "No peri-event samples found in the requested AUC window and event range"
+            )
+
+        animal_event_auc_rows = []
+
+        grouping_columns = ["animal", "group", "session_name", "event_index"]
+        for grouping_values, event_dataframe in auc_input_dataframe.groupby(grouping_columns):
+            event_dataframe = event_dataframe.sort_values("time_s")
+            time_values_s = event_dataframe["time_s"].to_numpy(dtype=float)
+            zscore_values = event_dataframe["zscore"].to_numpy(dtype=float)
+
+            if len(time_values_s) < 2:
+                continue
+
+            auc_value = float(np.trapz(zscore_values, x=time_values_s))
+
+            animal_event_auc_rows.append(
+                {
+                    "animal": grouping_values[0],
+                    "group": grouping_values[1],
+                    "session_name": grouping_values[2],
+                    "event_index": grouping_values[3],
+                    "auc_0_to_5s": auc_value,
+                }
+            )
+
+        animal_event_auc_dataframe = pd.DataFrame(animal_event_auc_rows)
+        if animal_event_auc_dataframe.empty:
+            raise ValueError("No valid animal-level AUC values could be computed")
+
+        return animal_event_auc_dataframe
+
+    def compute_group_event_auc_summary(
+            self,
+            auc_window_start_s: float = 0.0,
+            auc_window_end_s: float = 5.0,
+            max_event_index: int = 12,
+            session_name: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Compute group-level mean and SEM of animal peri-event AUC values.
+
+        Parameters
+        ----------
+        auc_window_start_s : float, default=0.0
+            Start time of the post-trigger integration window in seconds.
+        auc_window_end_s : float, default=5.0
+            End time of the post-trigger integration window in seconds.
+        max_event_index : int, default=12
+            Maximum event index to retain.
+        session_name : str, optional
+            If provided, restrict computation to one session.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Group-level summary dataframe with mean AUC, standard deviation,
+            SEM, and animal count for each event index.
+        """
+        animal_event_auc_dataframe = self.compute_animal_event_auc(
+            auc_window_start_s=auc_window_start_s,
+            auc_window_end_s=auc_window_end_s,
+            max_event_index=max_event_index,
+            session_name=session_name,
+        )
+
+        group_event_auc_summary = (
+            animal_event_auc_dataframe
+            .groupby(["group", "session_name", "event_index"], as_index=False)
+            .agg(
+                group_mean_auc=("auc_0_to_5s", "mean"),
+                group_standard_deviation=("auc_0_to_5s", "std"),
+                n_animals=("auc_0_to_5s", "count"),
+            )
+        )
+        group_event_auc_summary["group_sem_auc"] = (
+                group_event_auc_summary["group_standard_deviation"]
+                / np.sqrt(group_event_auc_summary["n_animals"])
+        )
+
+        return group_event_auc_summary
+
+    def plot_group_event_auc_across_first_events(
+            self,
+            auc_window_start_s: float = 0.0,
+            auc_window_end_s: float = 5.0,
+            max_event_index: int = 12,
+            session_name: Optional[str] = None,
+    ) -> None:
+        """
+        Plot group-level peri-event z-score AUC across the first events.
+
+        One subplot is generated per animal group. For each event index, the mean
+        AUC across animals is shown with SEM.
+
+        Parameters
+        ----------
+        auc_window_start_s : float, default=0.0
+            Start time of the post-trigger integration window in seconds.
+        auc_window_end_s : float, default=5.0
+            End time of the post-trigger integration window in seconds.
+        max_event_index : int, default=12
+            Number of first events to plot.
+        session_name : str, optional
+            If provided, restrict plotting to one session.
+
+        Raises
+        ------
+        ValueError
+            If no AUC summary data are available for plotting.
+        """
+        group_event_auc_summary = self.compute_group_event_auc_summary(
+            auc_window_start_s=auc_window_start_s,
+            auc_window_end_s=auc_window_end_s,
+            max_event_index=max_event_index,
+            session_name=session_name,
+        )
+
+        if session_name is not None:
+            group_event_auc_summary = group_event_auc_summary.loc[
+                group_event_auc_summary["session_name"] == session_name
+                ].copy()
+
+        if group_event_auc_summary.empty:
+            raise ValueError("No group-level event AUC data available for plotting")
+
+        figure, axes = plt.subplots(
+            len(self.subplot_group_order),
+            1,
+            figsize=(figure_size_peri[0], figure_size_peri[1] * len(self.subplot_group_order)),
+            sharex=True,
+            sharey=True,
+        )
+
+        if len(self.subplot_group_order) == 1:
+            axes = [axes]
+
+        for axis, group_name in zip(axes, self.subplot_group_order):
+            group_dataframe = group_event_auc_summary.loc[
+                group_event_auc_summary["group"] == group_name
+                ].sort_values("event_index")
+
+            if group_dataframe.empty:
+                axis.set_title(f"{group_name} (no data)")
+                axis.set_ylabel("AUC (z-score·s)")
+                axis.grid(alpha=0.3)
+                continue
+
+            sns.lineplot(
+                data=group_dataframe,
+                x="event_index",
+                y="group_mean_auc",
+                errorbar=None,
+                marker="o",
+                color=color_zscore,
+                linewidth=lw_peri_mean,
+                ax=axis,
+            )
+
+            axis.errorbar(
+                group_dataframe["event_index"].to_numpy(dtype=int),
+                group_dataframe["group_mean_auc"].to_numpy(dtype=float),
+                yerr=group_dataframe["group_sem_auc"].to_numpy(dtype=float),
+                fmt="none",
+                ecolor=color_zscore,
+                elinewidth=1.2,
+                capsize=3,
+            )
+
+            axis.set_xticks(np.arange(1, max_event_index + 1, dtype=int))
+            axis.set_ylabel("AUC (z-score·s)")
+            axis.set_title(
+                f"{group_name} — mean z-score AUC from "
+                f"{auc_window_start_s:.1f} to {auc_window_end_s:.1f} s "
+                f"(n≤{group_dataframe['n_animals'].max()})"
+            )
+            axis.grid(alpha=0.3)
+
+        axes[-1].set_xlabel("Event index")
+        figure.tight_layout()
+
+        output_stem = f"group_event_auc_first_{max_event_index}_events"
+        if session_name is not None:
+            output_stem += f"_{session_name}"
+
+        self._finalize_figure(figure, output_stem)
 
     def plot_group_average_all_events(self, session_name: Optional[str] = None) -> None:
         """

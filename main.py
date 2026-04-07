@@ -49,12 +49,18 @@ if __name__ == "__main__":
         output_directory=Path(base_path) / "group_outputs",
     )
 
-    group_analyzer.export_group_tables()
-    group_analyzer.plot_group_average_all_events()
+    # group_analyzer.export_group_tables()
+    # group_analyzer.plot_group_average_all_events()
 
     # Example: plot first event only across animals
-    group_analyzer.plot_group_average_single_event(event_index=1)
-    group_analyzer.plot_group_average_all_events()
-    group_analyzer.plot_all_single_event_group_averages()
+    # group_analyzer.plot_group_average_single_event(event_index=1)
+    # group_analyzer.plot_group_average_all_events()
+    # group_analyzer.plot_all_single_event_group_averages()
+    group_analyzer.plot_group_event_auc_across_first_events(
+        auc_window_start_s=0.0,
+        auc_window_end_s=5.0,
+        max_event_index=12,
+        session_name="Recall",
+    )
 
     plt.show()
