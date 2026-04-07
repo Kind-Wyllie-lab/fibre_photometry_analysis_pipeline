@@ -1,6 +1,8 @@
 # signal_processing.py
 import numpy as np
 from typing import Tuple, Optional
+
+from scipy.signal import savgol_filter
 from scipy.stats import linregress
 import pandas as pd
 from params import (calcium_channel, ref_channel, baseline_samples,
@@ -12,18 +14,24 @@ from scipy.stats import linregress
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
 
+
 def fit_reference_robust_bisquare(
     fluorescence: np.ndarray,
     reference: np.ndarray,
     tuning_constant: float = 4.685,
     max_iterations: int = 100,
     tolerance: float = 1e-10,
-) -> tuple[np.ndarray, float]:
+    allow_intercept: bool = True,
+) -> tuple[np.ndarray, float, float]:
     """
     Robustly fit a reference channel onto a fluorescence channel using
     iteratively reweighted least squares with Tukey bisquare weights.
 
-    The model is constrained to a zero intercept:
+    The fitted model is either
+
+    $$ fluorescence \\\\approx intercept + \\\\beta \\\\cdot reference $$
+
+    or, if `allow_intercept=False`,
 
     $$ fluorescence \\\\approx \\\\beta \\\\cdot reference $$
 
@@ -32,36 +40,35 @@ def fit_reference_robust_bisquare(
     fluorescence : np.ndarray
         One-dimensional fluorescence signal of interest.
     reference : np.ndarray
-        One-dimensional control/reference signal aligned to `fluorescence`.
+        One-dimensional reference signal aligned to `fluorescence`.
     tuning_constant : float, default=4.685
-        Tukey bisquare tuning constant controlling outlier rejection.
+        Tukey bisquare tuning constant.
     max_iterations : int, default=100
         Maximum number of robust reweighting iterations.
     tolerance : float, default=1e-10
-        Convergence threshold on the fitted slope.
+        Convergence threshold on parameter updates.
+    allow_intercept : bool, default=True
+        If True, fit both slope and intercept. If False, fit slope only.
 
     Returns
     -------
     fitted_reference : np.ndarray
-        Robustly fitted reference signal, equal to `beta * reference`.
+        Fitted reference contribution in fluorescence units.
     beta : float
-        Final fitted slope coefficient.
+        Fitted slope coefficient.
+    intercept : float
+        Fitted intercept. Equals 0.0 if `allow_intercept=False`.
 
     Raises
     ------
     ValueError
-        If the input arrays are not one-dimensional, do not share the same
-        length, or if the fit is ill-posed.
+        If the input arrays are invalid or if too few finite samples are
+        available.
 
     Notes
     -----
-    This implements the motion-fitting step described in the specification:
-    "Motion fitting algorithm: robust linear fit".
-
-    The returned fitted signal can be used to compute the motion-corrected
-    residual:
-
-    $$ motion\\\\_corrected = fluorescence - fitted\\\\_reference $$
+    If a robust iteration produces all-zero weights, the algorithm falls back
+    to the previous parameter estimate instead of raising an exception.
     """
     fluorescence = np.asarray(fluorescence, dtype=float)
     reference = np.asarray(reference, dtype=float)
@@ -71,13 +78,34 @@ def fit_reference_robust_bisquare(
     if fluorescence.shape[0] != reference.shape[0]:
         raise ValueError("`fluorescence` and `reference` must have the same length.")
 
-    initial_fit = linregress(reference, fluorescence)
-    beta = float(initial_fit.slope)
+    finite_mask = np.isfinite(fluorescence) & np.isfinite(reference)
+    if finite_mask.sum() < 3:
+        raise ValueError("At least 3 finite paired samples are required for robust fitting.")
+
+    y = fluorescence[finite_mask]
+    x = reference[finite_mask]
+
+    if np.allclose(x, 0):
+        raise ValueError("`reference` is all zeros or numerically constant at zero.")
+    if np.std(x) <= np.finfo(float).eps:
+        raise ValueError("`reference` has near-zero variance; fitting is ill-posed.")
+
+    if allow_intercept:
+        initial_fit = linregress(x, y)
+        beta = float(initial_fit.slope)
+        intercept = float(initial_fit.intercept)
+    else:
+        denominator = np.sum(x**2)
+        if denominator <= np.finfo(float).eps:
+            raise ValueError("Unweighted denominator is zero; cannot initialize slope.")
+        beta = float(np.sum(x * y) / denominator)
+        intercept = 0.0
 
     for _ in range(max_iterations):
-        residuals = fluorescence - beta * reference
-        robust_scale = np.median(np.abs(residuals - np.median(residuals))) / 0.6745
+        fitted = intercept + beta * x
+        residuals = y - fitted
 
+        robust_scale = np.median(np.abs(residuals - np.median(residuals))) / 0.6745
         if robust_scale <= np.finfo(float).eps:
             break
 
@@ -88,20 +116,39 @@ def fit_reference_robust_bisquare(
             0.0,
         )
 
-        denominator = np.sum(weights * reference**2)
-        if denominator <= np.finfo(float).eps:
-            raise ValueError("Robust reference fitting failed: zero weighted denominator.")
-
-        updated_beta = np.sum(weights * reference * fluorescence) / denominator
-
-        if np.abs(updated_beta - beta) < tolerance:
-            beta = float(updated_beta)
+        if np.sum(weights) <= np.finfo(float).eps:
             break
 
-        beta = float(updated_beta)
+        if allow_intercept:
+            design_matrix = np.column_stack([np.ones_like(x), x])
+            weighted_design = design_matrix * np.sqrt(weights)[:, None]
+            weighted_response = y * np.sqrt(weights)
+            parameters, *_ = np.linalg.lstsq(weighted_design, weighted_response, rcond=None)
+            updated_intercept = float(parameters[0])
+            updated_beta = float(parameters[1])
 
-    fitted_reference = beta * reference
-    return fitted_reference, beta
+            parameter_shift = max(
+                np.abs(updated_intercept - intercept),
+                np.abs(updated_beta - beta),
+            )
+            intercept = updated_intercept
+            beta = updated_beta
+        else:
+            denominator = np.sum(weights * x**2)
+            if denominator <= np.finfo(float).eps:
+                break
+
+            updated_beta = float(np.sum(weights * x * y) / denominator)
+            parameter_shift = np.abs(updated_beta - beta)
+            beta = updated_beta
+            intercept = 0.0
+
+        if parameter_shift < tolerance:
+            break
+
+    fitted_reference_full = intercept + beta * reference
+    return fitted_reference_full, beta, intercept
+
 
 
 def estimate_baseline_asls(
@@ -222,7 +269,7 @@ def optionally_smooth_signal(
     return savgol_filter(signal, window_length=window_length, polyorder=polyorder)
 
 
-def compute_photometry_dff_and_zscore(
+def preprocess_photometry_dff_and_zscore(
     df_clean: pd.DataFrame,
     calcium_channel: str,
     reference_channel: str,
@@ -282,11 +329,11 @@ def compute_photometry_dff_and_zscore(
     Parameters
     ----------
     df_clean : pd.DataFrame
-        Input table containing the fluorescence and reference channels.
+        Input table containing the calcium_fluorescence and reference_fluorescence channels.
     calcium_channel : str
-        Column name of the fluorescence channel of interest.
+        Column name of the calcium_fluorescence channel of interest.
     reference_channel : str
-        Column name of the control/reference channel, typically 410 nm or 560 nm.
+        Column name of the control/reference_fluorescence channel, typically 410 nm or 560 nm.
     baseline_interval_samples : int or None, default=None
         Number of initial samples defining the baseline interval used when the
         denominator depends on `median(Baseline)`. If None, the full trace is used.
@@ -305,7 +352,7 @@ def compute_photometry_dff_and_zscore(
     background_calcium : float or None, default=None
         Optional scalar background to subtract from the calcium channel.
     background_reference : float or None, default=None
-        Optional scalar background to subtract from the reference channel.
+        Optional scalar background to subtract from the reference_fluorescence channel.
     baseline_smoothness_penalty : float, default=1e6
         Smoothness penalty for asymmetric least squares baseline estimation.
     baseline_asymmetry_penalty : float, default=0.01
@@ -315,13 +362,13 @@ def compute_photometry_dff_and_zscore(
     -------
     results : dict
         Dictionary containing:
-        - ``'fluorescence_processed'`` : processed fluorescence signal
-        - ``'reference_processed'`` : processed reference signal
-        - ``'fitted_reference'`` : robustly fitted reference signal
-        - ``'motion_corrected'`` : fluorescence minus fitted reference
-        - ``'fluorescence_baseline'`` : estimated fluorescence baseline
-        - ``'reference_baseline'`` : estimated reference baseline
-        - ``'baseline_fitted'`` : fitted fluorescence baseline in baseline mode
+        - ``'fluorescence_processed'`` : processed calcium_fluorescence signal
+        - ``'reference_processed'`` : processed reference_fluorescence signal
+        - ``'fitted_reference'`` : robustly fitted reference_fluorescence signal
+        - ``'motion_corrected'`` : calcium_fluorescence minus fitted reference_fluorescence
+        - ``'fluorescence_baseline'`` : estimated calcium_fluorescence baseline
+        - ``'reference_baseline'`` : estimated reference_fluorescence baseline
+        - ``'baseline_fitted'`` : fitted calcium_fluorescence baseline in baseline mode
         - ``'dff'`` : selected ΔF/F trace
         - ``'zscore'`` : full-trace Z-score of ΔF/F
         - ``'beta'`` : robust fit slope
@@ -331,28 +378,28 @@ def compute_photometry_dff_and_zscore(
     ValueError
         If inputs are invalid or if a required denominator is numerically zero.
     """
-    fluorescence = df_clean[calcium_channel].to_numpy(dtype=float)
-    reference = df_clean[reference_channel].to_numpy(dtype=float)
+    calcium_fluorescence = df_clean[calcium_channel].to_numpy(dtype=float)
+    reference_fluorescence = df_clean[reference_channel].to_numpy(dtype=float)
 
     if background_calcium is not None:
-        fluorescence = fluorescence - float(background_calcium)
+        calcium_fluorescence = calcium_fluorescence - float(background_calcium)
     if background_reference is not None:
-        reference = reference - float(background_reference)
+        reference_fluorescence = reference_fluorescence - float(background_reference)
 
-    fluorescence = optionally_smooth_signal(
-        fluorescence,
+    calcium_fluorescence = optionally_smooth_signal(
+        calcium_fluorescence,
         enable_smoothing=enable_smoothing,
         window_length=smoothing_window_length,
         polyorder=smoothing_polyorder,
     )
-    reference = optionally_smooth_signal(
-        reference,
+    reference_fluorescence = optionally_smooth_signal(
+        reference_fluorescence,
         enable_smoothing=enable_smoothing,
         window_length=smoothing_window_length,
         polyorder=smoothing_polyorder,
     )
 
-    n_samples = fluorescence.size
+    n_samples = calcium_fluorescence.size
     if baseline_interval_samples is None:
         baseline_interval_samples = n_samples
     baseline_interval_samples = int(baseline_interval_samples)
@@ -360,28 +407,28 @@ def compute_photometry_dff_and_zscore(
         raise ValueError("`baseline_interval_samples` must be in the range [1, n_samples].")
 
     baseline_slice = slice(0, baseline_interval_samples)
-    baseline_median_raw = np.median(fluorescence[baseline_slice])
-    full_trace_median_raw = np.median(fluorescence)
+    baseline_median_raw = np.median(calcium_fluorescence[baseline_slice])
+    full_trace_median_raw = np.median(calcium_fluorescence)
 
     fluorescence_baseline = estimate_baseline_asls(
-        fluorescence,
+        calcium_fluorescence,
         smoothness_penalty=baseline_smoothness_penalty,
         asymmetry_penalty=baseline_asymmetry_penalty,
     )
     reference_baseline = estimate_baseline_asls(
-        reference,
+        reference_fluorescence,
         smoothness_penalty=baseline_smoothness_penalty,
         asymmetry_penalty=baseline_asymmetry_penalty,
     )
 
     if apply_baseline_correction:
-        fluorescence_for_motion = fluorescence - fluorescence_baseline
-        reference_for_motion = reference - reference_baseline
+        fluorescence_for_motion = calcium_fluorescence - fluorescence_baseline
+        reference_for_motion = reference_fluorescence - reference_baseline
     else:
-        fluorescence_for_motion = fluorescence
-        reference_for_motion = reference
+        fluorescence_for_motion = calcium_fluorescence
+        reference_for_motion = reference_fluorescence
 
-    fitted_reference, beta = fit_reference_robust_bisquare(
+    fitted_reference, beta, intercept = fit_reference_robust_bisquare(
         fluorescence=fluorescence_for_motion,
         reference=reference_for_motion,
     )
@@ -398,7 +445,7 @@ def compute_photometry_dff_and_zscore(
         denominator = fitted_reference
         if np.any(np.abs(denominator) <= np.finfo(float).eps):
             raise ValueError("fitted410 contains zeros; cannot compute ΔF/F safely.")
-        dff = (fluorescence - fitted_reference) / denominator
+        dff = (calcium_fluorescence - fitted_reference) / denominator
         baseline_fitted = fluorescence_baseline
 
     elif control_source.lower() == "baseline" and apply_baseline_correction:
@@ -406,14 +453,14 @@ def compute_photometry_dff_and_zscore(
         if np.abs(denominator) <= np.finfo(float).eps:
             raise ValueError("median(Baseline) is zero; cannot compute ΔF/F.")
         baseline_fitted = fluorescence_baseline
-        dff = ((fluorescence - fluorescence_baseline) - baseline_fitted) / denominator
+        dff = ((calcium_fluorescence - fluorescence_baseline) - baseline_fitted) / denominator
 
     elif control_source.lower() == "baseline" and not apply_baseline_correction:
         denominator = baseline_median_raw
         if np.abs(denominator) <= np.finfo(float).eps:
             raise ValueError("median(Baseline) is zero; cannot compute ΔF/F.")
         baseline_fitted = fluorescence_baseline
-        dff = (fluorescence - denominator) / denominator
+        dff = (calcium_fluorescence - denominator) / denominator
 
     else:
         raise ValueError("`control_source` must be either '410' or 'baseline'.")
@@ -425,8 +472,8 @@ def compute_photometry_dff_and_zscore(
     zscore = (dff - dff_mean) / dff_std
 
     return {
-        "fluorescence_processed": fluorescence,
-        "reference_processed": reference,
+        "fluorescence_processed": calcium_fluorescence,
+        "reference_processed": reference_fluorescence,
         "fitted_reference": fitted_reference,
         "motion_corrected": motion_corrected,
         "fluorescence_baseline": fluorescence_baseline,
@@ -483,82 +530,126 @@ def extract_epoch(signal: np.ndarray, time: np.ndarray,
         return None
     return signal[start:end]
 
+def extract_epoched_data(
+    signal: np.ndarray,
+    time_s: np.ndarray,
+    event_times_s: np.ndarray,
+    n_pre: int,
+    n_post: int,
+    compute_trial_baseline_dff: bool = False,
+    trial_baseline_window_s: float = 15.0,
+    trial_baseline_statistic: str = "mean",
+    minimum_baseline_value: Optional[float] = None,
+) -> np.ndarray:
+    """
+    Extract peri-event epochs and optionally normalize each epoch to its own
+    pre-trigger baseline to obtain trial-local ΔF/F.
 
-def extract_epoched_data(signal: np.ndarray, time_s: np.ndarray,
-                         event_times_s: np.ndarray,
-                         n_pre: int, n_post: int) -> np.ndarray:
-    """Extract all epochs around event timestamps."""
+    Parameters
+    ----------
+    signal : numpy.ndarray
+        One-dimensional signal array from which epochs are extracted.
+    time_s : numpy.ndarray
+        One-dimensional time vector in seconds aligned to `signal`.
+    event_times_s : numpy.ndarray
+        Event timestamps in seconds used as epoch centers.
+    n_pre : int
+        Number of samples to include before each event.
+    n_post : int
+        Number of samples to include after each event.
+    compute_trial_baseline_dff : bool, default=False
+        If ``True``, compute trial-local ΔF/F for each extracted epoch using
+        its own pre-trigger baseline window.
+    trial_baseline_window_s : float, default=2.0
+        Duration in seconds of the pre-trigger baseline window used for
+        trial-local ΔF/F normalization.
+    trial_baseline_statistic : {"mean", "median"}, default="median"
+        Summary statistic used to estimate the baseline fluorescence per trial.
+    minimum_baseline_value : float or None, default=None
+        Optional lower bound for acceptable baseline values. If provided,
+        epochs with baseline values less than or equal to this threshold are
+        rejected.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape ``(n_trials, n_timepoints)`` containing extracted epochs.
+        If `compute_trial_baseline_dff` is ``True``, the returned values are
+        trial-local ΔF/F.
+
+    Raises
+    ------
+    ValueError
+        If no valid epochs are extracted, if the baseline window is invalid,
+        or if the baseline statistic is unsupported.
+
+    Notes
+    -----
+    When `compute_trial_baseline_dff` is enabled, the baseline is computed from
+    the interval immediately preceding the trigger, corresponding to the last
+    `trial_baseline_window_s` seconds of the pre-event segment.
+    """
     epochs = []
     for t_ev in event_times_s:
         epoch = extract_epoch(signal, time_s, t_ev, n_pre, n_post)
-        if epoch is not None:
-            epochs.append(epoch)
+        if epoch is None:
+            continue
+
+        if compute_trial_baseline_dff:
+            if n_pre <= 0:
+                raise ValueError("n_pre must be > 0 to compute trial-local baseline ΔF/F")
+
+            if len(time_s) < 2:
+                raise ValueError("time_s must contain at least 2 samples to infer sampling interval")
+
+            sampling_interval_s = float(np.median(np.diff(time_s)))
+            if sampling_interval_s <= 0:
+                raise ValueError("Invalid non-positive sampling interval inferred from time_s")
+
+            baseline_samples = int(round(trial_baseline_window_s / sampling_interval_s))
+            if baseline_samples <= 0:
+                raise ValueError(
+                    f"trial_baseline_window_s={trial_baseline_window_s} yields zero baseline samples"
+                )
+            if baseline_samples > n_pre:
+                raise ValueError(
+                    f"trial_baseline_window_s={trial_baseline_window_s}s requires {baseline_samples} samples, "
+                    f"but only {n_pre} pre-event samples are available"
+                )
+
+            baseline_segment = epoch[n_pre - baseline_samples:n_pre]
+
+            if trial_baseline_statistic == "mean":
+                baseline_value = float(np.mean(baseline_segment))
+            elif trial_baseline_statistic == "median":
+                baseline_value = float(np.median(baseline_segment))
+            else:
+                raise ValueError(
+                    "trial_baseline_statistic must be either 'mean' or 'median'"
+                )
+
+            if not np.isfinite(baseline_value):
+                continue
+            if baseline_value == 0:
+                continue
+            if minimum_baseline_value is not None and baseline_value <= minimum_baseline_value:
+                continue
+
+            epoch = (epoch - baseline_value) / baseline_value
+
+        epochs.append(epoch)
+
     if not epochs:
         raise ValueError("No valid epochs extracted — check event times vs signal duration")
 
-    result = np.array(epochs)
+    result = np.asarray(epochs, dtype=float)
     print(f"Epochs extracted: {result.shape[0]} trials, {result.shape[1]} samples each")
+
+    if compute_trial_baseline_dff:
+        print(
+            "Applied trial-local ΔF/F normalization "
+            f"using {trial_baseline_window_s:.3f}s pre-trigger baseline "
+            f"({trial_baseline_statistic})"
+        )
+
     return result
-
-
-def process_signals(df_clean) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
-np.ndarray, np.ndarray, np.ndarray, pd.DataFrame]:
-    """Process fiber photometry signals: motion correction, normalization, epoch extraction.
-
-    Returns:
-        epochs_dff: Peri-event ΔF/F epochs (n_trials x n_timepoints)
-        epochs_z: Peri-event z-score epochs (n_trials x n_timepoints)
-        peri_t: Time vector for epochs (s, relative to event)
-        dff_baseline: Full-trace ΔF/F (baseline median normalization)
-        dff_fitted: Full-trace ΔF/F (fitted410 normalization)
-        zscore: Full-trace z-score
-        filtered_events: DataFrame of events used for epoch extraction
-    """
-
-    # time_s = df_clean["TimeStamp"].values / 1000.0
-
-    # n_pre = int(time_pre_event_s * sample_rate_hz)
-    # n_post = int(time_post_event_s * sample_rate_hz)
-    # peri_t = np.arange(-n_pre, n_post)
-
-    photometry_results = compute_photometry_dff_and_zscore(
-        df_clean=df_clean,
-        calcium_channel=calcium_channel,
-        reference_channel=ref_channel,
-        baseline_interval_samples=baseline_samples,
-        control_source="410",  # "410" or "baseline"
-        apply_baseline_correction=False,  # True or False
-        enable_smoothing=False,
-        smoothing_window_length=11,
-        smoothing_polyorder=3,
-        background_calcium=None,
-        background_reference=None,
-        baseline_smoothness_penalty=1e6,
-        baseline_asymmetry_penalty=0.01,
-    )
-
-    return photometry_results
-    # events_selected = select_events_from_params(first_events)
-    # events_to_use = filter_first_event(events_selected, skip_first_event)
-    # if events_to_use.empty:
-    #     raise ValueError("No events remaining after selection/filtering — check params")
-    #
-    # event_times_s = events_to_use["TimeStamp"].values / 1000.0
-    #
-    # epochs_dff = extract_epoched_data(dff_baseline, time_s, event_times_s, n_pre, n_post)
-    # epochs_z = extract_epoched_data(zscore, time_s, event_times_s, n_pre, n_post)
-
-    # return epochs_dff, epochs_z, peri_t, dff_baseline, dff_fitted, zscore, events_to_use
-
-
-if __name__ == "__main__":
-    import sys
-    sys.path.insert(0, "/Users/Lou/PycharmProjects/Fibre_photometry_M2")
-
-    from preprocessing import extract_session_raw_data
-    from event_sorting import process_events
-
-    raw_fluorescence = extract_session_raw_data()
-    input_stem = "Fluorescence"
-    # _, input_first_events = process_events(input_df, input_stem)
-    process_signals(raw_fluorescence)

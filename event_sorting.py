@@ -1,7 +1,7 @@
 # event_processing.py
 import pandas as pd
 from pathlib import Path
-from params import output_dir, event_gap_ms
+from params import event_gap_ms
 
 # ADD to event_processing.py - after imports
 
@@ -97,21 +97,21 @@ def detect_clusters_and_first_events(df_events: pd.DataFrame) -> tuple[pd.DataFr
     return df, first_events  # clustered_df, first_events
 
 
-def save_event_files(df_events: pd.DataFrame, first_events: pd.DataFrame, stem: str):
+def save_event_files(output_dir, df_events: pd.DataFrame, first_events: pd.DataFrame):
     events_path = output_dir / f"processed_events_sorting.csv"
     first_path = output_dir / f"processed_first_cluster_events.csv"
     df_events.to_csv(events_path, index=False)
     first_events.to_csv(first_path, index=False)
 
 
-def process_events(df_clean: pd.DataFrame, stem: str):
+def process_events(df_clean: pd.DataFrame, output_dir):
     print("=" * 50)
     print("EVENT PROCESSING PIPELINE")
     print("=" * 50)
     df_events = extract_non_zero_events(df_clean)
     df_events_clustered, first_events = detect_clusters_and_first_events(df_events)
-    save_event_files(df_events_clustered, first_events, stem)
-    print(f"SUCCESS: {stem} events processed!")
+    save_event_files(output_dir, df_events_clustered, first_events)
+    print(f"SUCCESS: {output_dir} events processed!")
     return df_events_clustered, first_events
 
 # if __name__ == "__main__":

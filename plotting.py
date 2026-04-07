@@ -131,53 +131,6 @@ class PhotometryPlotter:
         self.output_directory = Path(self.figure_output_directory)
         self.output_directory.mkdir(parents=True, exist_ok=True)
 
-        self._validate_core_inputs()
-
-    def _validate_core_inputs(self) -> None:
-        """
-        Validate input array shapes and required dataframe columns.
-
-        Raises
-        ------
-        ValueError
-            If required columns or array dimensions are invalid.
-        """
-        required_columns = {"TimeStamp"}
-        missing_columns = required_columns.difference(self.df_clean.columns)
-        if missing_columns:
-            raise ValueError(f"df_clean missing required columns: {sorted(missing_columns)}")
-
-        if len(self.dff_fitted) != len(self.df_clean):
-            raise ValueError(
-                f"dff_fitted length {len(self.dff_fitted)} != df_clean length {len(self.df_clean)}"
-            )
-        if len(self.zscore) != len(self.df_clean):
-            raise ValueError(
-                f"zscore length {len(self.zscore)} != df_clean length {len(self.df_clean)}"
-            )
-
-        if self.epochs_dff.ndim != 2:
-            raise ValueError(f"epochs_dff must be 2D, got {self.epochs_dff.ndim}D")
-        if self.epochs_z.ndim != 2:
-            raise ValueError(f"epochs_z must be 2D, got {self.epochs_z.ndim}D")
-
-        if self.epochs_dff.shape != self.epochs_z.shape:
-            raise ValueError(
-                f"epochs_dff shape {self.epochs_dff.shape} != epochs_z shape {self.epochs_z.shape}"
-            )
-
-        if self.epochs_dff.shape[1] != len(self.peri_t):
-            raise ValueError(
-                f"peri_t length {len(self.peri_t)} != epoch timepoints {self.epochs_dff.shape[1]}"
-            )
-
-        valid_peri_event_plot_modes = {"average", "trials"}
-        if self.peri_event_plot_mode not in valid_peri_event_plot_modes:
-            raise ValueError(
-                f"peri_event_plot_mode must be one of {sorted(valid_peri_event_plot_modes)}, "
-                f"got {self.peri_event_plot_mode!r}"
-            )
-
     @property
     def time_s(self) -> np.ndarray:
         """
@@ -514,117 +467,143 @@ class PhotometryPlotter:
 
     def plot_peri_event_trials(self) -> None:
         """
-        Plot all peri-event trials individually with a dark-to-light progression.
+        Plot all peri-event z-score trials individually with a dark-to-light progression.
 
         Notes
         -----
         Trial order is preserved from first to last extracted event. The first trial
         is plotted with the darkest color and the last trial with the lightest color.
+        The x-axis is expressed in peri-event seconds.
         """
-        peri_event_long_dataframe = self._build_peri_event_long_dataframe()
-        n_trials = self.epochs_dff.shape[0]
-
-        fig, axes = plt.subplots(2, 1, figsize=figure_size_peri, sharex=True)
-
-        axis_signal_pairs = [
-            (axes[0], "ΔF/F", color_dff),
-            (axes[1], "Z-score", color_zscore),
-        ]
-
-        for axis, signal_kind, base_color in axis_signal_pairs:
-            signal_subset = peri_event_long_dataframe.loc[
-                peri_event_long_dataframe["signal_kind"] == signal_kind
-                ].copy()
-
-            trial_palette = self._build_progressive_lightness_palette(
-                base_color=base_color,
-                n_colors=n_trials,
-                min_lightness_mix=0.0,
-                max_lightness_mix=0.8,
-            )
-            trial_to_color = {
-                trial_number: trial_palette[trial_number - 1]
-                for trial_number in range(1, n_trials + 1)
-            }
-
-            sns.lineplot(
-                data=signal_subset,
-                x="time_s",
-                y="signal_value",
-                hue="trial",
-                units="trial",
-                estimator=None,
-                palette=trial_to_color,
-                linewidth=1.2,
-                alpha=self.trial_alpha,
-                legend=False,
-                ax=axis,
+        n_trials, n_timepoints = self.epochs_z.shape
+        if len(self.peri_t) != n_timepoints:
+            raise ValueError(
+                f"peri_t length {len(self.peri_t)} != z-score epoch length {n_timepoints}"
             )
 
-            axis.axvline(0, color=color_event_onset, ls="--", lw=0.8)
-            axis.set_ylabel(signal_kind)
-            axis.set_title(
-                f"Peri-event individual trials — {signal_kind} (n={n_trials} trials)"
-            )
-            axis.grid(alpha=0.3)
-            self._set_ytick_params(axis)
+        zscore_long_dataframe = (
+            pd.DataFrame(self.epochs_z, index=np.arange(1, n_trials + 1), columns=self.peri_t)
+            .rename_axis(index="trial")
+            .reset_index()
+            .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
+        )
+        zscore_long_dataframe["trial"] = zscore_long_dataframe["trial"].astype(int)
+        zscore_long_dataframe["time_s"] = zscore_long_dataframe["time_s"].astype(float)
 
-        axes[-1].set_xlabel("Time from event (s)")
-        self._set_xtick_params(axes[-1])
+        figure, axis = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
 
-        fig.tight_layout()
-        self._finalize_figure(fig, f"peri_event_trials_{self.stem}")
+        trial_palette = self._build_progressive_lightness_palette(
+            base_color=color_zscore,
+            n_colors=n_trials,
+            min_lightness_mix=0.0,
+            max_lightness_mix=0.8,
+        )
+        trial_to_color = {
+            trial_number: trial_palette[trial_number - 1]
+            for trial_number in range(1, n_trials + 1)
+        }
+
+        sns.lineplot(
+            data=zscore_long_dataframe,
+            x="time_s",
+            y="signal_value",
+            hue="trial",
+            units="trial",
+            estimator=None,
+            palette=trial_to_color,
+            linewidth=1.2,
+            alpha=self.trial_alpha,
+            legend=False,
+            ax=axis,
+        )
+
+        baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
+        axis.axvspan(
+            -baseline_window_s,
+            0,
+            color="grey",
+            alpha=0.15,
+            label=f"Baseline window ({baseline_window_s:.1f} s)",
+        )
+        axis.axvline(0, color=color_event_onset, ls="--", lw=0.8, label="Event onset")
+
+        axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
+        axis.set_xlabel("Time from event (s)")
+        axis.set_ylabel("Z-score")
+        axis.set_title(f"Peri-event individual trials — Z-score (n={n_trials} trials)")
+        axis.grid(alpha=0.3)
+        self._set_xtick_params(axis)
+        self._set_ytick_params(axis)
+        axis.legend()
+
+        figure.tight_layout()
+        self._finalize_figure(figure, f"peri_event_trials_zscore_{self.stem}")
 
     def plot_peri_event_average(self) -> None:
         """
-        Plot trial-averaged peri-event ΔF/F and z-score using seaborn on long-form data.
+        Plot trial-averaged peri-event z-score using seaborn on long-form data.
+
+        Notes
+        -----
+        The x-axis is expressed in peri-event seconds. A shaded region indicates
+        the amount of pre-trigger baseline used for epoch-local ΔF/F computation.
         """
-        peri_event_long_dataframe = self._build_peri_event_long_dataframe()
-
-        fig, axes = plt.subplots(2, 1, figsize=figure_size_peri, sharex=True)
-
-        axis_signal_pairs = [
-            (axes[0], "ΔF/F", color_dff),
-            (axes[1], "Z-score", color_zscore),
-        ]
-
-        for axis, signal_kind, signal_color in axis_signal_pairs:
-            signal_subset = peri_event_long_dataframe.loc[
-                peri_event_long_dataframe["signal_kind"] == signal_kind
-                ]
-
-            sns.lineplot(
-                data=signal_subset,
-                x="time_s",
-                y="signal_value",
-                estimator="mean",
-                errorbar="se",
-                color=signal_color,
-                linewidth=lw_peri_mean,
-                ax=axis,
-                label=f"Mean {signal_kind}",
+        n_trials, n_timepoints = self.epochs_z.shape
+        if len(self.peri_t) != n_timepoints:
+            raise ValueError(
+                f"peri_t length {len(self.peri_t)} != z-score epoch length {n_timepoints}"
             )
 
-            axis.axvline(
-                0,
-                color=color_event_onset,
-                ls="--",
-                lw=0.8,
-                label="Event onset",
-            )
-            axis.set_ylabel(signal_kind)
-            axis.set_title(
-                f"Peri-event average — {signal_kind} (n={self.epochs_dff.shape[0]} trials)"
-            )
-            axis.grid(alpha=0.3)
-            self._set_ytick_params(axis)
-            axis.legend()
+        zscore_long_dataframe = (
+            pd.DataFrame(self.epochs_z, index=np.arange(1, n_trials + 1), columns=self.peri_t)
+            .rename_axis(index="trial")
+            .reset_index()
+            .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
+        )
+        zscore_long_dataframe["trial"] = zscore_long_dataframe["trial"].astype(int)
+        zscore_long_dataframe["time_s"] = zscore_long_dataframe["time_s"].astype(float)
 
-        axes[-1].set_xlabel("Time from event (s)")
-        self._set_xtick_params(axes[-1])
+        figure, axis = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
 
-        fig.tight_layout()
-        self._finalize_figure(fig, f"peri_event_average_{self.stem}")
+        sns.lineplot(
+            data=zscore_long_dataframe,
+            x="time_s",
+            y="signal_value",
+            estimator="mean",
+            errorbar="se",
+            color=color_zscore,
+            linewidth=lw_peri_mean,
+            ax=axis,
+            label="Mean Z-score",
+        )
+
+        baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
+        axis.axvspan(
+            -baseline_window_s,
+            0,
+            color="grey",
+            alpha=0.15,
+            label=f"Baseline window ({baseline_window_s:.1f} s)",
+        )
+        axis.axvline(
+            0,
+            color=color_event_onset,
+            ls="--",
+            lw=0.8,
+            label="Event onset",
+        )
+
+        axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
+        axis.set_xlabel("Time from event (s)")
+        axis.set_ylabel("Z-score")
+        axis.set_title(f"Peri-event average — Z-score (n={n_trials} trials)")
+        axis.grid(alpha=0.3)
+        self._set_xtick_params(axis)
+        self._set_ytick_params(axis)
+        axis.legend()
+
+        figure.tight_layout()
+        self._finalize_figure(figure, f"peri_event_average_zscore_{self.stem}")
 
     def plot_peri_event_heatmaps(self) -> None:
         """

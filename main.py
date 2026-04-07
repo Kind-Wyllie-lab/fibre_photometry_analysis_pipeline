@@ -40,7 +40,7 @@ def run_pipeline():
 
 
 if __name__ == "__main__":
-    qcompleted_pipeline = run_pipeline()
+    completed_pipeline = run_pipeline()
 
     group_peri_event_dataframe = completed_pipeline.build_group_peri_event_dataframe()
 
@@ -54,5 +54,7 @@ if __name__ == "__main__":
 
     # Example: plot first event only across animals
     group_analyzer.plot_group_average_single_event(event_index=1)
+    group_analyzer.plot_group_average_all_events()
+    group_analyzer.plot_all_single_event_group_averages()
 
     plt.show()

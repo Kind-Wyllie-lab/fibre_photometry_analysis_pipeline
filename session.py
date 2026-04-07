@@ -4,11 +4,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 
+import params
 from preprocessing import extract_session_raw_data
 from event_sorting import process_events
-from signal_processing import process_signals, filter_first_event
+from signal_processing import filter_first_event, preprocess_photometry_dff_and_zscore, \
+    extract_epoched_data, select_events_from_params
 from plotting import PhotometryPlotter
 
 
@@ -194,24 +197,21 @@ class PhotometrySession:
         if self.first_events is None:
             raise ValueError("Event sorting must be run before signal processing.")
 
-        (
-            self.epochs_dff,
-            self.epochs_z,
-            self.peri_t,
-            self.dff_baseline,
-            self.dff_fitted,
-            self.zscore,
-            self.events_to_use,
-        ) = process_signals(
-            self.df_clean,
-            self.first_events,
-            str(self.animal_path),
-            self.skip_first_event,
+        self.preprocessed_signals = preprocess_photometry_dff_and_zscore(
+            df_clean=self.df_clean,
+            calcium_channel='CH1-470',
+            reference_channel='CH1-410',
+            baseline_interval_samples=None,
+            control_source="410",  # "410" or "baseline"
+            apply_baseline_correction=False,  # True or False
+            enable_smoothing=False,
+            smoothing_window_length=11,
+            smoothing_polyorder=3,
+            background_calcium=None,
+            background_reference=None,
+            baseline_smoothness_penalty=1e6,
+            baseline_asymmetry_penalty=0.01,
         )
-
-        self.t_zero_s = self.first_events.iloc[0]["TimeStamp"] / 1000.0
-        filtered_events = filter_first_event(self.first_events, self.skip_first_event)
-        self.event_times_s = filtered_events["TimeStamp"].values / 1000.0
 
     def run_plotting_stage(self) -> None:
         """
@@ -222,15 +222,15 @@ class PhotometrySession:
         ValueError
             If signal processing outputs are unavailable.
         """
-        if self.df_clean is None or self.dff_fitted is None or self.zscore is None:
+        if self.preprocessed_signals is None:
             raise ValueError("Signal processing must be run before plotting.")
 
         session_stem = f"{self.animal}_{self.session_name}"
 
         plotter = PhotometryPlotter(
             df_clean=self.df_clean,
-            dff_fitted=self.dff_fitted,
-            zscore=self.zscore,
+            dff_fitted=self.preprocessed_signals['dff'],
+            zscore=self.preprocessed_signals['zscore'],
             epochs_dff=self.epochs_dff,
             epochs_z=self.epochs_z,
             peri_t=self.peri_t,
@@ -239,7 +239,7 @@ class PhotometrySession:
             t_zero_s=self.t_zero_s,
             filtered_events=self.events_to_use,
             figure_output_directory=self.output_directory,
-            peri_event_plot_mode="trials",
+            peri_event_plot_mode="average",
         )
         plotter.run_all()
 
@@ -264,6 +264,24 @@ class PhotometrySession:
 
         if self.run_signal_processing:
             self.fluorescence_processing()
+
+        self.t_zero_s = self.first_events.iloc[0]["TimeStamp"] / 1000.0
+
+        time_s = self.df_clean["TimeStamp"].values / 1000.0
+
+        n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
+        n_post = int(params.time_post_event_s * params.sample_rate_hz)
+        self.peri_t = np.arange(-n_pre, n_post)
+        events_selected = select_events_from_params(self.first_events)
+        events_to_use = filter_first_event(events_selected, self.skip_first_event)
+
+        if events_to_use.empty:
+            raise ValueError("No events remaining after selection/filtering — check params")
+
+        event_times_s = events_to_use["TimeStamp"].values / 1000.0
+
+        self.epochs_dff = extract_epoched_data(self.preprocessed_signals['dff'], time_s, event_times_s, n_pre, n_post)
+        self.epochs_z = extract_epoched_data(self.preprocessed_signals['zscore'], time_s, event_times_s, n_pre, n_post)
 
         if self.run_plotting:
             self.run_plotting_stage()
