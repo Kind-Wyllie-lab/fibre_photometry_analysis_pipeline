@@ -12,7 +12,7 @@ from params import base_path, sessions
 run_preprocessing = True
 run_event_sorting = True
 run_signal_processing = True
-run_plotting = True
+run_plotting = False
 
 from pathlib import Path
 from group_analysis import PhotometryGroupAnalyzer

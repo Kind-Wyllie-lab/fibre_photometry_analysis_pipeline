@@ -9,7 +9,7 @@ base_path = Path(r"/media/prignane/data_fast/Fibre_photmetry")
 # output_dir.mkdir(exist_ok=True, parents=True)
 #
 # === CONFIGURATION PARAMETERS ===
-sessions =  ["Cond"]
+sessions =  ["Recall"]
 
 events_type = ["fluorescence", "fluorescence_event"]
 

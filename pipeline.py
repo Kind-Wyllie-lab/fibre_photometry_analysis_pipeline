@@ -99,9 +99,9 @@ class PhotometryPipeline:
                 animal=completed_session.animal,
                 session_name=completed_session.session_name,
                 peri_t=completed_session.peri_t,
-                epochs_dff=completed_session.epochs_dff,
                 epochs_z=completed_session.epochs_z,
             )
+
             session_level_dataframes.append(session_dataframe)
 
         if not session_level_dataframes:
