@@ -94,16 +94,3 @@ def extract_session_raw_data(raw_data_path, output_dir):
     df_clean = clean_and_map_events(df_raw)
     save_cleaned(df_clean, output_dir)
     return df_clean
-
-# if __name__ == "__main__":
-#
-#     print("TESTING PREPROCESSING STANDALONE")
-#     print(f"DATA_FILES: {[f.name for f in data_files]}")
-#     print(f"CSV_DIR: {csv_dir}")
-#
-#     df_clean = process_single_file()
-#     print(f"\nSUCCESS!")
-#     print(f"  Shape: {df_clean.shape}")
-#     print(f"  Columns: {list(df_clean.columns)}")
-#     print(f"  Events: {df_clean['Events_numeric'].value_counts().to_dict()}")
-#     print(f"  Saved: {csv_dir / 'cleaned_*.csv'}")
