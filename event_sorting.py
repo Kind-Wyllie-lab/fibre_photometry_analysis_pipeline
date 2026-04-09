@@ -131,23 +131,3 @@ def process_events(df_clean: pd.DataFrame, output_dir):
     save_event_files(output_dir, df_events_clustered, first_events)
     print(f"SUCCESS: {output_dir} events processed!")
     return df_events_clustered, first_events
-
-# if __name__ == "__main__":
-#     """STANDALONE TEST - Events processing pipeline"""
-#     print("TESTING EVENT PROCESSING STANDALONE")
-#     print(f"DATA_FILES: {[f.name for f in data_files]}")
-#
-#     from preprocessing import process_session
-#     df_clean = process_session()
-#
-#     print(f"df_clean shape: {df_clean.shape}")
-#     print(f"Events_numeric: {df_clean['Events_numeric'].value_counts().to_dict()}")
-#
-#     stem = Path(data_files[0]).stem
-#     clustered_events, first_events = process_events(df_clean, stem)
-#
-#     print(f"\nSUCCESS!")
-#     print(f"  Clustered events: {len(clustered_events)}")
-#     print(f"  First events/clusters: {len(first_events)}")
-#     print(f"  Clusters: {clustered_events['cluster_id'].nunique()}")
-#     print(f"  Saved: {output_dir}/events_sorting_*.csv")
