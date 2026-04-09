@@ -152,23 +152,3 @@ heatmap_show_all_ylabels = True  # True=label every trial, False=every Nth
 heatmap_xtick_nbins = None
 heatmap_ytick_nbins = None
 
-# === LOG SUMMARY ===
-print("Params loaded:")
-#print(f"  Output: {OUTPUT_DIR}")
-print(f"  SR: {sample_rate_hz}Hz, Baseline: {baseline_samples} samples")
-print(f"  Epoch window: {time_pre_event_s}-{time_post_event_s}s")
-
-
-# if __name__ == "__main__":
-#     print("=" * 50)
-#     print(f"ANIMAL_ID: {animal_id}")
-#     print(f"TYPE_OF_RECORDING: {recording_type}")
-#     print(f"TYPE_OF_EVENTS: {events_type}")
-#
-#     data_files = select_data_files(recording_type, events_type)
-#     print(f"DATA_FILES ({len(data_files)}): {[f.name for f in data_files]}")
-#
-#     figs_dir, csv_dir = animal_output_dirs(animal_id)
-#     print(f"OUTPUT FIGS: {figs_dir}")
-#     print(f"OUTPUT CSV:  {csv_dir}")
-#     print("=" * 50)
