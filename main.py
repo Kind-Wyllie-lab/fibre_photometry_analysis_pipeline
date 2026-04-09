@@ -1,6 +1,9 @@
 # Replace main.py content with this version, or adapt the run section
 
 import matplotlib
+
+import params
+
 matplotlib.use("TkAgg")
 
 from matplotlib import pyplot as plt
@@ -33,7 +36,7 @@ def run_pipeline():
         run_preprocessing=run_preprocessing,
         run_event_sorting=run_event_sorting,
         run_signal_processing=run_signal_processing,
-        run_plotting=run_plotting,
+        run_plotting=run_plotting
     )
     pipeline.run()
     return pipeline
@@ -56,11 +59,18 @@ if __name__ == "__main__":
     # group_analyzer.plot_group_average_single_event(event_index=1)
     # group_analyzer.plot_group_average_all_events()
     # group_analyzer.plot_all_single_event_group_averages()
-    group_analyzer.plot_group_event_auc_across_first_events(
+    # group_analyzer.plot_group_event_auc_across_first_events(
+    #     auc_window_start_s=0.0,
+    #     auc_window_end_s=5.0,
+    #     max_event_index=12,
+    #     session_name="Recall",
+    # )
+    for animal in group_analyzer.metadata_dataframe['animal'].values:
+        group_analyzer.plot_animal_auc_window_benchmark_3d(
+        animal=animal,
         auc_window_start_s=0.0,
         auc_window_end_s=5.0,
         max_event_index=12,
         session_name="Recall",
-    )
-
-    plt.show()
+        )
+        plt.show()

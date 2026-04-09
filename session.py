@@ -271,7 +271,7 @@ class PhotometrySession:
 
         n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
         n_post = int(params.time_post_event_s * params.sample_rate_hz)
-        self.peri_t = np.arange(-n_pre, n_post)
+        self.peri_t = np.arange(-n_pre, n_post)/params.sample_rate_hz
         events_selected = select_events_from_params(self.first_events)
         events_to_use = filter_first_event(events_selected, self.skip_first_event)
 

@@ -8,6 +8,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib.collections import PolyCollection
+from matplotlib import colors as mcolors
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import params
 from params import (
@@ -430,6 +433,200 @@ class PhotometryGroupAnalyzer:
         )
 
         return group_event_auc_summary
+
+    def plot_animal_auc_window_benchmark_3d(
+            self,
+            animal: str,
+            auc_window_start_s: float = 0.0,
+            auc_window_end_s: float = 5.0,
+            max_event_index: int = 12,
+            session_name: Optional[str] = None,
+            azimuth_degrees: float = -60.0,
+            elevation_degrees: float = 25.0,
+    ) -> None:
+        """
+        Plot peri-event z-score traces for one animal in 3D with event index as the third axis.
+
+        The x-axis represents peri-event time in seconds, the y-axis represents
+        z-score amplitude, and the z-axis represents event index. The portion of
+        each trace used for AUC extraction is shown as a shaded polygon under the
+        curve within the specified AUC window.
+
+        Parameters
+        ----------
+        animal : str
+            Animal identifier to plot.
+        auc_window_start_s : float, default=0.0
+            Start time of the AUC integration window in seconds.
+        auc_window_end_s : float, default=5.0
+            End time of the AUC integration window in seconds.
+        max_event_index : int, default=12
+            Maximum event index to display.
+        session_name : str, optional
+            If provided, restrict plotting to one session.
+        azimuth_degrees : float, default=-60.0
+            Azimuth angle used for the 3D camera.
+        elevation_degrees : float, default=25.0
+            Elevation angle used for the 3D camera.
+
+        Raises
+        ------
+        ValueError
+            If no peri-event data are available for the requested animal.
+        """
+        animal_dataframe = self.session_level_peri_event_dataframe.loc[
+            self.session_level_peri_event_dataframe["animal"] == animal
+            ].copy()
+
+        if session_name is not None:
+            animal_dataframe = animal_dataframe.loc[
+                animal_dataframe["session_name"] == session_name
+                ].copy()
+
+        animal_dataframe = animal_dataframe.loc[
+            (animal_dataframe["event_index"] >= 1)
+            & (animal_dataframe["event_index"] <= max_event_index)
+            ].copy()
+
+        if animal_dataframe.empty:
+            raise ValueError(
+                f"No peri-event data available for animal={animal!r}"
+                + (f", session_name={session_name!r}" if session_name is not None else "")
+            )
+
+        animal_group = str(animal_dataframe["group"].iloc[0])
+
+        animal_mean_trace_dataframe = (
+            animal_dataframe
+            .groupby(["animal", "group", "session_name", "event_index", "time_s"], as_index=False)["zscore"]
+            .mean()
+            .rename(columns={"zscore": "animal_mean_zscore"})
+        )
+
+        event_indices = list(range(1, max_event_index + 1))
+        available_event_dataframe = animal_mean_trace_dataframe.loc[
+            animal_mean_trace_dataframe["event_index"].isin(event_indices)
+        ].copy()
+
+        if available_event_dataframe.empty:
+            raise ValueError(
+                f"No event traces available for animal={animal!r} in the requested event range"
+            )
+
+        figure = plt.figure(figsize=(figure_size_peri[0] * 1.2, figure_size_peri[1] * 1.2))
+        axis = figure.add_subplot(111, projection="3d")
+
+        poly_vertices = []
+        poly_event_positions = []
+        auc_summary_rows = []
+
+        trace_palette = sns.color_palette("crest", n_colors=len(event_indices))
+
+        for color_index, event_index in enumerate(event_indices):
+            event_dataframe = available_event_dataframe.loc[
+                available_event_dataframe["event_index"] == event_index
+                ].sort_values("time_s")
+
+            if event_dataframe.empty:
+                continue
+
+            time_values_s = event_dataframe["time_s"].to_numpy(dtype=float)
+            mean_zscore_values = event_dataframe["animal_mean_zscore"].to_numpy(dtype=float)
+
+            axis.plot(
+                time_values_s,
+                mean_zscore_values,
+                zs=event_index,
+                zdir="z",
+                color=trace_palette[color_index],
+                linewidth=lw_peri_mean,
+            )
+
+            auc_mask = (
+                    (time_values_s >= auc_window_start_s)
+                    & (time_values_s <= auc_window_end_s)
+            )
+
+            if np.sum(auc_mask) >= 2:
+                auc_time_values_s = time_values_s[auc_mask]
+                auc_zscore_values = mean_zscore_values[auc_mask]
+
+                auc_value = float(np.trapz(auc_zscore_values, x=auc_time_values_s))
+
+                polygon_vertices = [(auc_time_values_s[0], 0.0)]
+                polygon_vertices.extend(list(zip(auc_time_values_s, auc_zscore_values)))
+                polygon_vertices.append((auc_time_values_s[-1], 0.0))
+
+                poly_vertices.append(polygon_vertices)
+                poly_event_positions.append(event_index)
+
+                auc_summary_rows.append(
+                    {
+                        "event_index": event_index,
+                        "auc_value": auc_value,
+                    }
+                )
+            else:
+                auc_summary_rows.append(
+                    {
+                        "event_index": event_index,
+                        "auc_value": np.nan,
+                    }
+                )
+
+        if poly_vertices:
+            polygon_collection = PolyCollection(
+                poly_vertices,
+                facecolors=[mcolors.to_rgba(color_zscore, alpha=0.25)] * len(poly_vertices),
+                edgecolors="none",
+            )
+            axis.add_collection3d(polygon_collection, zs=poly_event_positions, zdir="z")
+
+        y_min = float(available_event_dataframe["animal_mean_zscore"].min())
+        y_max = float(available_event_dataframe["animal_mean_zscore"].max())
+        z_min = float(min(event_indices))
+        z_max = float(max(event_indices))
+
+        reference_plane_specifications = [
+            (0.0, color_event_onset, 0.20),
+            (auc_window_start_s, "black", 0.10),
+            (auc_window_end_s, "black", 0.10),
+        ]
+
+        for reference_x, plane_color, plane_alpha in reference_plane_specifications:
+            reference_plane_vertices = [[
+                (reference_x, y_min, z_min),
+                (reference_x, y_max, z_min),
+                (reference_x, y_max, z_max),
+                (reference_x, y_min, z_max),
+            ]]
+
+            reference_plane = Poly3DCollection(
+                reference_plane_vertices,
+                facecolors=mcolors.to_rgba(plane_color, alpha=plane_alpha),
+                edgecolors=plane_color,
+                linewidths=0.8,
+            )
+            axis.add_collection3d(reference_plane)
+
+        axis.set_xlabel("Time from event (s)")
+        axis.set_ylabel("Z-score")
+        axis.set_zlabel("Event index")
+        axis.set_zticks(event_indices)
+        axis.view_init(elev=elevation_degrees, azim=azimuth_degrees)
+        axis.set_title(
+            f"{animal} ({animal_group}) — 3D peri-event z-score traces\n"
+            f"AUC window: [{auc_window_start_s:.1f}, {auc_window_end_s:.1f}] s"
+        )
+
+        figure.tight_layout()
+
+        output_stem = f"auc_benchmark_3d_{animal}_first_{max_event_index}_events"
+        if session_name is not None:
+            output_stem += f"_{session_name}"
+
+        self._finalize_figure(figure, output_stem)
+
 
     def plot_group_event_auc_across_first_events(
             self,
