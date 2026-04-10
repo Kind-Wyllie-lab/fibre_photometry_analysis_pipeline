@@ -71,7 +71,7 @@ if __name__ == "__main__":
     )
 
     # group_analyzer.export_group_tables()
-    # group_analyzer.plot_group_average_all_events()
+    group_analyzer.plot_group_average_all_events()
 
     # Example: plot first event only across animals
     # group_analyzer.plot_group_average_single_event(event_index=1)

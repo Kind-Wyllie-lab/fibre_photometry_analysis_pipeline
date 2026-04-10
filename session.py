@@ -198,8 +198,20 @@ class PhotometrySession:
         """
         if self.df_clean is None:
             raise ValueError("Preprocessing must be run before event sorting.")
-        _, self.first_events = process_events(self.df_clean, self.output_directory)
-        return self.first_events
+
+        self.event_tables = process_events(self.df_clean, self.output_directory)
+
+        # CS onsets (first onset per LED cluster) -> use this for your epoch extraction
+        self.cs_onsets = self.event_tables["cs_led_cluster_first_onsets"]
+
+        # CS offsets (last offset per LED cluster) or first offset per offset cluster (choose what you need)
+        self.cs_offsets_first = self.event_tables["cs_led_cluster_first_offsets"]
+        self.cs_offsets_last = self.event_tables["cs_led_cluster_last_offsets"]
+
+        # Freezing onsets/offsets (from inferred freezing_state)
+        self.freezing_onsets = self.event_tables["freezing_cluster_first_onsets"]
+        self.freezing_offsets = self.event_tables["freezing_cluster_first_offsets"]
+
 
     def fluorescence_processing(self) -> None:
         """
@@ -212,7 +224,7 @@ class PhotometrySession:
         """
         if self.df_clean is None:
             raise ValueError("Preprocessing must be run before signal processing.")
-        if self.first_events is None:
+        if self.event_tables is None:
             raise ValueError("Event sorting must be run before signal processing.")
 
         self.preprocessed_signals = preprocess_photometry_dff_and_zscore(
@@ -282,27 +294,27 @@ class PhotometrySession:
 
         if self.run_signal_processing:
             self.fluorescence_processing()
-
-        self.t_zero_s = self.first_events.iloc[0]["TimeStamp"] / 1000.0
-
-        time_s = self.df_clean["TimeStamp"].values / 1000.0
-
-        n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
-        n_post = int(params.time_post_event_s * params.sample_rate_hz)
-        self.peri_t = np.arange(-n_pre, n_post)/params.sample_rate_hz
-        events_selected = select_events_from_params(self.first_events)
-        events_to_use = filter_first_event(events_selected, self.skip_first_event)
-
-        if events_to_use.empty:
-            raise ValueError("No events remaining after selection/filtering — check params")
-
-        event_times_s = events_to_use["TimeStamp"].values / 1000.0
-
-        self.epochs_dff = extract_epoched_data(self.preprocessed_signals['dff'], time_s, event_times_s, n_pre, n_post)
-        self.epochs_z = extract_epoched_data(self.preprocessed_signals['zscore'], time_s, event_times_s, n_pre, n_post)
-
-        if self.run_plotting:
-            self.run_plotting_stage()
+        #
+        # self.t_zero_s = self.first_events.iloc[0]["TimeStamp"] / 1000.0
+        #
+        # time_s = self.df_clean["TimeStamp"].values / 1000.0
+        #
+        # n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
+        # n_post = int(params.time_post_event_s * params.sample_rate_hz)
+        # self.peri_t = np.arange(-n_pre, n_post)/params.sample_rate_hz
+        # events_selected = select_events_from_params(self.freezing_onsets)
+        # events_to_use = filter_first_event(events_selected, False) #self.skip_first_event
+        #
+        # if events_to_use.empty:
+        #     raise ValueError("No events remaining after selection/filtering — check params")
+        #
+        # event_times_s = events_to_use["TimeStamp"].values / 1000.0
+        #
+        # self.epochs_dff = extract_epoched_data(self.preprocessed_signals['dff'], time_s, event_times_s, n_pre, n_post)
+        # self.epochs_z = extract_epoched_data(self.preprocessed_signals['zscore'], time_s, event_times_s, n_pre, n_post)
+        #
+        # if self.run_plotting:
+        #     self.run_plotting_stage()
 
         return self
 
