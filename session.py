@@ -257,7 +257,7 @@ class PhotometrySession:
             t_zero_s=self.t_zero_s,
             filtered_events=self.events_to_use,
             figure_output_directory=self.output_directory,
-            peri_event_plot_mode="average",
+            peri_event_plot_mode="trials",
         )
         plotter.run_all()
 

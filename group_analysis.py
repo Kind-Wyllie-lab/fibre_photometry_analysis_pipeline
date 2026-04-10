@@ -645,6 +645,243 @@ class PhotometryGroupAnalyzer:
 
         self._finalize_figure(figure, output_stem)
 
+    def plot_event_trace_stack_by_animal_3d(
+            self,
+            event_index: int,
+            session_name: Optional[str] = None,
+            group_name: Optional[str] = None,
+            azimuth_degrees: float = -60.0,
+            elevation_degrees: float = 25.0,
+    ) -> None:
+        """
+        Plot one peri-event z-score trace per animal in 3D for a selected event index.
+
+        The x-axis represents peri-event time in seconds, the y-axis represents
+        animal-level mean z-score, and the z-axis indexes animals.
+
+        Parameters
+        ----------
+        event_index : int
+            Event index to display.
+        session_name : str, optional
+            If provided, restrict plotting to one session.
+        group_name : str, optional
+            If provided, restrict plotting to one animal group.
+        azimuth_degrees : float, default=-60.0
+            Azimuth angle used for the 3D camera.
+        elevation_degrees : float, default=25.0
+            Elevation angle used for the 3D camera.
+
+        Raises
+        ------
+        ValueError
+            If no data are available for the requested selection.
+        """
+        selection_dataframe = self.session_level_peri_event_dataframe.loc[
+            self.session_level_peri_event_dataframe["event_index"] == event_index
+            ].copy()
+
+        if session_name is not None:
+            selection_dataframe = selection_dataframe.loc[
+                selection_dataframe["session_name"] == session_name
+                ].copy()
+
+        if group_name is not None:
+            selection_dataframe = selection_dataframe.loc[
+                selection_dataframe["group"] == group_name
+                ].copy()
+
+        if selection_dataframe.empty:
+            raise ValueError(
+                f"No peri-event data available for event_index={event_index}, "
+                f"session_name={session_name!r}, group_name={group_name!r}"
+            )
+
+        animal_mean_trace_dataframe = (
+            selection_dataframe
+            .groupby(["animal", "group", "session_name", "time_s"], as_index=False)["zscore"]
+            .mean()
+            .rename(columns={"zscore": "animal_mean_zscore"})
+        )
+
+        animal_labels = sorted(animal_mean_trace_dataframe["animal"].unique().tolist())
+        animal_to_z_position = {
+            animal_label: z_position
+            for z_position, animal_label in enumerate(animal_labels, start=1)
+        }
+
+        figure = plt.figure(figsize=(figure_size_peri[0] * 1.2, figure_size_peri[1] * 1.2))
+        axis = figure.add_subplot(111, projection="3d")
+
+        animal_palette = sns.color_palette("viridis", n_colors=len(animal_labels))
+
+        for color_index, animal_label in enumerate(animal_labels):
+            animal_dataframe = animal_mean_trace_dataframe.loc[
+                animal_mean_trace_dataframe["animal"] == animal_label
+                ].sort_values("time_s")
+
+            if animal_dataframe.empty:
+                continue
+
+            axis.plot(
+                animal_dataframe["time_s"].to_numpy(dtype=float),
+                animal_dataframe["animal_mean_zscore"].to_numpy(dtype=float),
+                zs=animal_to_z_position[animal_label],
+                zdir="z",
+                color=animal_palette[color_index],
+                linewidth=lw_peri_mean,
+            )
+
+        y_min = float(animal_mean_trace_dataframe["animal_mean_zscore"].min())
+        y_max = float(animal_mean_trace_dataframe["animal_mean_zscore"].max())
+        z_min = 1.0
+        z_max = float(len(animal_labels))
+
+        onset_plane_vertices = [[
+            (0.0, y_min, z_min),
+            (0.0, y_max, z_min),
+            (0.0, y_max, z_max),
+            (0.0, y_min, z_max),
+        ]]
+        onset_plane = Poly3DCollection(
+            onset_plane_vertices,
+            facecolors=mcolors.to_rgba(color_event_onset, alpha=0.18),
+            edgecolors=color_event_onset,
+            linewidths=0.8,
+        )
+        axis.add_collection3d(onset_plane)
+
+        axis.set_xlabel("Time from event (s)")
+        axis.set_ylabel("Z-score")
+        axis.set_zlabel("Animal")
+        axis.set_zticks(list(animal_to_z_position.values()))
+        axis.set_zticklabels(animal_labels)
+        axis.view_init(elev=elevation_degrees, azim=azimuth_degrees)
+
+        title_suffix = f" | group={group_name}" if group_name is not None else ""
+        if session_name is not None:
+            title_suffix += f" | session={session_name}"
+        axis.set_title(
+            f"Animal-stacked peri-event z-score traces — event {event_index}{title_suffix}"
+        )
+
+        figure.tight_layout()
+
+        output_stem = f"event_{event_index}_animal_stack_3d"
+        if group_name is not None:
+            output_stem += f"_{group_name}"
+        if session_name is not None:
+            output_stem += f"_{session_name}"
+
+        self._finalize_figure(figure, output_stem)
+
+    def plot_group_average_trace_stack_by_event_3d(
+            self,
+            group_name: str,
+            max_event_index: int = 12,
+            session_name: Optional[str] = None,
+            azimuth_degrees: float = -60.0,
+            elevation_degrees: float = 25.0,
+    ) -> None:
+        """
+        Plot group-average peri-event z-score traces in 3D with event index as the z-axis.
+
+        The x-axis represents peri-event time in seconds, the y-axis represents
+        group-mean z-score, and the z-axis represents event index.
+
+        Parameters
+        ----------
+        group_name : str
+            Animal group to display.
+        max_event_index : int, default=12
+            Maximum event index to display.
+        session_name : str, optional
+            If provided, restrict plotting to one session.
+        azimuth_degrees : float, default=-60.0
+            Azimuth angle used for the 3D camera.
+        elevation_degrees : float, default=25.0
+            Elevation angle used for the 3D camera.
+
+        Raises
+        ------
+        ValueError
+            If no data are available for the requested group.
+        """
+        group_mean_trace_dataframe = self.compute_group_mean_event_traces(
+            max_event_index=max_event_index,
+            session_name=session_name,
+        )
+
+        selection_dataframe = group_mean_trace_dataframe.loc[
+            group_mean_trace_dataframe["group"] == group_name
+            ].copy()
+
+        if selection_dataframe.empty:
+            raise ValueError(
+                f"No peri-event group mean traces available for group_name={group_name!r}, "
+                f"session_name={session_name!r}"
+            )
+
+        event_indices = list(range(1, max_event_index + 1))
+        figure = plt.figure(figsize=(figure_size_peri[0] * 1.2, figure_size_peri[1] * 1.2))
+        axis = figure.add_subplot(111, projection="3d")
+
+        event_palette = sns.color_palette("crest", n_colors=len(event_indices))
+
+        for color_index, event_index in enumerate(event_indices):
+            event_dataframe = selection_dataframe.loc[
+                selection_dataframe["event_index"] == event_index
+                ].sort_values("time_s")
+
+            if event_dataframe.empty:
+                continue
+
+            axis.plot(
+                event_dataframe["time_s"].to_numpy(dtype=float),
+                event_dataframe["group_mean_zscore"].to_numpy(dtype=float),
+                zs=event_index,
+                zdir="z",
+                color=event_palette[color_index],
+                linewidth=lw_peri_mean,
+            )
+
+        y_min = float(selection_dataframe["group_mean_zscore"].min())
+        y_max = float(selection_dataframe["group_mean_zscore"].max())
+        z_min = float(min(event_indices))
+        z_max = float(max(event_indices))
+
+        onset_plane_vertices = [[
+            (0.0, y_min, z_min),
+            (0.0, y_max, z_min),
+            (0.0, y_max, z_max),
+            (0.0, y_min, z_max),
+        ]]
+        onset_plane = Poly3DCollection(
+            onset_plane_vertices,
+            facecolors=mcolors.to_rgba(color_event_onset, alpha=0.18),
+            edgecolors=color_event_onset,
+            linewidths=0.8,
+        )
+        axis.add_collection3d(onset_plane)
+
+        axis.set_xlabel("Time from event (s)")
+        axis.set_ylabel("Group mean z-score")
+        axis.set_zlabel("Event index")
+        axis.set_zticks(event_indices)
+        axis.view_init(elev=elevation_degrees, azim=azimuth_degrees)
+
+        title_suffix = f" | session={session_name}" if session_name is not None else ""
+        axis.set_title(
+            f"Group-average peri-event z-score traces — {group_name}{title_suffix}"
+        )
+
+        figure.tight_layout()
+
+        output_stem = f"group_average_event_stack_3d_{group_name}"
+        if session_name is not None:
+            output_stem += f"_{session_name}"
+
+        self._finalize_figure(figure, output_stem)
 
     def plot_group_event_auc_across_first_events(
             self,

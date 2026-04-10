@@ -20,19 +20,9 @@
 from pathlib import Path
 from typing import Literal
 
-# === PATHS ===
 base_path = Path(r"/media/prignane/data_fast/Fibre_photmetry")
-# animal_id = "Rat_4987"  # Works for "4879" or "Rat_4879"
-# output_dir = base_path / f"{animal_id}/output"
-# output_dir.mkdir(exist_ok=True, parents=True)
-#
-# === CONFIGURATION PARAMETERS ===
+
 sessions =  ["Recall"]
-
-events_type = ["fluorescence", "fluorescence_event"]
-
-# fluo_csv_path = output_dir / f"{animal_id}/fluorescence.csv"
-# events_csv_path = output_dir / f"{animal_id}/events.csv"
 
 def animal_output_dirs(animal_num: str, session:str):
     """Return (figures_dir, csv_dir). Create if missing."""
@@ -40,12 +30,8 @@ def animal_output_dirs(animal_num: str, session:str):
     out_root.mkdir(exist_ok=True)
     return out_root
 
-
-# === FILES SELECTION ===
-# === SAMPLING ===
 sample_rate_hz = 60.0
 
-# === PREPROCESSING ===
 skiprows_json = 1
 event_mapping = {
     "0": 0,
@@ -62,11 +48,8 @@ baseline_samples = 1000
 zscore_window = 300
 sync_signal_to_first_event = True
 
-# === EVENTS / EPOCHS ===
+
 event_gap_ms = 5000
-
-
-epoch_min_length_samples = 100
 
 time_pre_event_s = 2
 time_post_event_s = 10

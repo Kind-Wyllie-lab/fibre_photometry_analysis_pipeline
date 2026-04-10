@@ -132,7 +132,7 @@ class PhotometryPlotter:
     t_zero_s: Optional[float] = None
     filtered_events: Optional[pd.DataFrame] = None
     figure_output_directory: str = './'
-    peri_event_plot_mode: str = "average"
+    peri_event_plot_mode: str = "trials"
     trial_alpha: float = 0.9
 
     def __post_init__(self) -> None:

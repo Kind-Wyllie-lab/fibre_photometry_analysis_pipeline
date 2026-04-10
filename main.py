@@ -85,11 +85,40 @@ if __name__ == "__main__":
     # )
 
     for animal in group_analyzer.metadata_dataframe['animal'].values:
-        group_analyzer.plot_animal_auc_window_benchmark_3d(
-        animal=animal,
+        group_analyzer.plot_group_event_auc_across_first_events(
+        # animal=animal,
         auc_window_start_s=0.0,
         auc_window_end_s=5.0,
         max_event_index=12,
         session_name="Recall",
         )
         plt.show()
+        # group_analyzer.plot_event_trace_stack_by_animal_3d(
+        #     event_index=1,
+        #     session_name="cond",
+        #     group_name="wt",
+        # )
+        # group_analyzer.plot_event_trace_stack_by_animal_3d(
+        #     event_index=1,
+        #     session_name="cond",
+        #     group_name=None,
+        # )
+        # plt.show()
+        # group_analyzer.plot_group_average_trace_stack_by_event_3d(
+        #     group_name="wt",
+        #     max_event_index=12,
+        #     session_name="cond",
+        # )
+        # plt.show()
+        # group_analyzer.plot_group_average_trace_stack_by_event_3d(
+        #     group_name="het",
+        #     max_event_index=12,
+        #     session_name="cond",
+        # )
+        # plt.show()
+        # group_analyzer.plot_group_average_trace_stack_by_event_3d(
+        #     group_name="gcamp",
+        #     max_event_index=12,
+        #     session_name="cond",
+        # )
+        # plt.show()

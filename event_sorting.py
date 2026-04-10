@@ -83,7 +83,7 @@ def process_events(df_clean: pd.DataFrame, stem: str):
 def extract_non_zero_events(df_clean: pd.DataFrame) -> pd.DataFrame:
     print("DEBUG Events columns:", df_clean.columns.tolist())
 
-    events_df = df_clean.loc[df_clean['Events_numeric'] != 0]
+    events_df = df_clean.loc[df_clean['Events_LED'] != 0]
 
     if events_df.empty:
         print("Raw Events sample:")
@@ -109,7 +109,7 @@ def detect_clusters_and_first_events(df_events: pd.DataFrame) -> tuple[pd.DataFr
     # First event per cluster (earliest TimeStamp)
     first_events = df.loc[
         df.groupby("cs_n")["TimeStamp"].idxmin()
-    ][["cs_n", "TimeStamp", "Events_numeric"]].reset_index(drop=True)
+    ][["cs_n", "TimeStamp", "Events_LED"]].reset_index(drop=True)
 
     print(f"First events per cs:\n{first_events}")
     return df, first_events  # clustered_df, first_events
@@ -123,11 +123,9 @@ def save_event_files(output_dir, df_events: pd.DataFrame, first_events: pd.DataF
 
 
 def process_events(df_clean: pd.DataFrame, output_dir):
-    print("=" * 50)
-    print("EVENT PROCESSING PIPELINE")
-    print("=" * 50)
+
     df_events = extract_non_zero_events(df_clean)
     df_events_clustered, first_events = detect_clusters_and_first_events(df_events)
     save_event_files(output_dir, df_events_clustered, first_events)
-    print(f"SUCCESS: {output_dir} events processed!")
+
     return df_events_clustered, first_events
