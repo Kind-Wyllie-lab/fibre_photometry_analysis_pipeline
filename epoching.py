@@ -76,7 +76,7 @@ class EventEpochExtractor:
 
         df_for_epoching = df_events.copy()
 
-        if epoching_spec.skip_first_event and len(df_for_epoching) > 0:
+        if len(df_for_epoching) > 0:
             df_for_epoching = df_for_epoching.iloc[1:].reset_index(drop=True)
 
         event_times_s = df_for_epoching[timestamp_column].to_numpy(dtype=float) / 1000.0

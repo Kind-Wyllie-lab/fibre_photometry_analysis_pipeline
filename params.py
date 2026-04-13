@@ -32,30 +32,17 @@ def animal_output_dirs(animal_num: str, session:str):
 
 sample_rate_hz = 60.0
 
-skiprows_json = 1
-event_mapping = {
-    "0": 0,
-    "Input1*2*0": 1,
-    "Input1*2*1": 2,
-}
-selected_cols = ["TimeStamp", "Events", "CH1-410", "CH1-470", "CH1-560"]
 round_decimals = 4
 
 # === SIGNALS ===
 calcium_channel = "CH1-470"
 ref_channel = "CH1-410"
 baseline_samples = 1000
-zscore_window = 300
-sync_signal_to_first_event = True
-
 
 event_gap_ms = 5000
 
 time_pre_event_s = 2
 time_post_event_s = 10
-
-baseline_start_s = -5.0
-baseline_end_s = 0.0
 
 selected_clusters = list(range(0, 20)) #SELECTED_CLUSTERS = list(range(5, 15)), select Clusters 5-14
 
@@ -129,9 +116,3 @@ heatmap_xtick_minor = 1.0   # seconds between minor ticks
 heatmap_ytick_major_step = 1  # every Nth trial gets major tick label
 heatmap_ytick_minor_step = 1  # minor grid lines every N trials
 heatmap_show_all_ylabels = True  # True=label every trial, False=every Nth
-
-# Optional: different density on heatmaps only
-
-heatmap_xtick_nbins = None
-heatmap_ytick_nbins = None
-
