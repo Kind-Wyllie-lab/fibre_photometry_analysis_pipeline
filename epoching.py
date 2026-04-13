@@ -16,13 +16,9 @@ class EpochingSpec:
     event_table_key : str
         Key in `event_tables` dict pointing to the event dataframe to use.
         Example: ``"cs_led_cluster_first_onsets"`` or ``"freezing_cluster_first_onsets"``.
-    skip_first_event : bool, default=False
-        Whether to drop the very first event before epoching.
     """
 
     event_table_key: str
-    skip_first_event: bool = False
-
 
 class EventEpochExtractor:
     """

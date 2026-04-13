@@ -201,18 +201,6 @@ class PhotometrySession:
 
         self.event_tables = process_events(self.df_clean, self.output_directory)
 
-        # CS onsets (first onset per LED cluster) -> use this for your epoch extraction
-        self.cs_onsets = self.event_tables["cs_led_cluster_first_onsets"]
-
-        # CS offsets (last offset per LED cluster) or first offset per offset cluster (choose what you need)
-        self.cs_offsets_first = self.event_tables["cs_led_cluster_first_offsets"]
-        self.cs_offsets_last = self.event_tables["cs_led_cluster_last_offsets"]
-
-        # Freezing onsets/offsets (from inferred freezing_state)
-        self.freezing_onsets = self.event_tables["freezing_cluster_first_onsets"]
-        self.freezing_offsets = self.event_tables["freezing_cluster_first_offsets"]
-
-
     def fluorescence_processing(self) -> None:
         """
         Execute signal processing and peri-event extraction for the current session.

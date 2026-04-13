@@ -36,7 +36,8 @@ run_signal_processing = True
 run_plotting = False
 
 from pathlib import Path
-from group_analysis import PhotometryGroupAnalyzer
+from group_analysis import PhotometryGroupAnalyzer, run_group_level_plots_for_event_types
+
 
 def run_pipeline():
     """
@@ -63,62 +64,21 @@ def run_pipeline():
 if __name__ == "__main__":
     completed_pipeline = run_pipeline()
 
-    group_peri_event_dataframe = completed_pipeline.build_group_peri_event_dataframe()
+    event_types = {
+        # "cs_onsets": "cs_led_cluster_first_onsets",
+        # "cs_offsets": "cs_led_cluster_first_offsets",
+        # "freezing_onsets": "freezing_cluster_first_onsets",
+        "freezing_offsets": "freezing_cluster_first_offsets",
+    }
 
-    group_analyzer = PhotometryGroupAnalyzer(
-        session_level_peri_event_dataframe=group_peri_event_dataframe,
-        output_directory=Path(base_path) / "group_outputs",
-    )
-
-    # group_analyzer.export_group_tables()
-    group_analyzer.plot_group_average_all_events()
-
-    # Example: plot first event only across animals
-    # group_analyzer.plot_group_average_single_event(event_index=1)
-    # group_analyzer.plot_group_average_all_events()
-    # group_analyzer.plot_all_single_event_group_averages()
-    # group_analyzer.plot_group_event_auc_across_first_events(
-    #     auc_window_start_s=0.0,
-    #     auc_window_end_s=5.0,
-    #     max_event_index=12,
-    #     session_name="Recall",
-    # )
-
-    for animal in group_analyzer.metadata_dataframe['animal'].values:
-        group_analyzer.plot_group_event_auc_across_first_events(
-        # animal=animal,
+    run_group_level_plots_for_event_types(
+        completed_pipeline=completed_pipeline,
+        event_types=event_types,
+        group_output_root=Path(base_path) / "group_outputs",
         auc_window_start_s=0.0,
         auc_window_end_s=5.0,
         max_event_index=12,
-        session_name="Recall",
-        )
-        plt.show()
-        # group_analyzer.plot_event_trace_stack_by_animal_3d(
-        #     event_index=1,
-        #     session_name="cond",
-        #     group_name="wt",
-        # )
-        # group_analyzer.plot_event_trace_stack_by_animal_3d(
-        #     event_index=1,
-        #     session_name="cond",
-        #     group_name=None,
-        # )
-        # plt.show()
-        # group_analyzer.plot_group_average_trace_stack_by_event_3d(
-        #     group_name="wt",
-        #     max_event_index=12,
-        #     session_name="cond",
-        # )
-        # plt.show()
-        # group_analyzer.plot_group_average_trace_stack_by_event_3d(
-        #     group_name="het",
-        #     max_event_index=12,
-        #     session_name="cond",
-        # )
-        # plt.show()
-        # group_analyzer.plot_group_average_trace_stack_by_event_3d(
-        #     group_name="gcamp",
-        #     max_event_index=12,
-        #     session_name="cond",
-        # )
-        # plt.show()
+        session_name_for_auc="Recall",
+    )
+
+    plt.show()

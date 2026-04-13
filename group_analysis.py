@@ -31,6 +31,7 @@ from matplotlib import colors as mcolors
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import params
+from epoching import EpochingSpec
 from params import (
     figure_size_peri,
     figure_dpi,
@@ -1197,3 +1198,78 @@ class PhotometryGroupAnalyzer:
             plt.show()
         else:
             plt.close(figure)
+
+
+def run_group_level_plots_for_event_types(
+    completed_pipeline,
+    event_types: dict[str, str],
+    group_output_root: Path,
+    auc_window_start_s: float = 0.0,
+    auc_window_end_s: float = 5.0,
+    max_event_index: int = 12,
+    session_name_for_auc: str | None = "Recall",
+) -> None:
+    """
+    Run the full set of group-level plots for multiple event types.
+
+    Parameters
+    ----------
+    completed_pipeline : PhotometryPipeline
+        Completed pipeline object holding processed sessions.
+    event_types : dict[str, str]
+        Mapping from a human-readable label to an event table key to epoch on.
+        Example:
+        - {"cs_onset": "cs_led_cluster_first_onsets",
+           "cs_offset": "cs_led_cluster_first_offsets",
+           "freeze_onset": "freezing_cluster_first_onsets"}
+    group_output_root : pathlib.Path
+        Root output directory for group plots. Each event type writes into a subfolder.
+    auc_window_start_s : float, default=0.0
+        AUC start time in seconds.
+    auc_window_end_s : float, default=5.0
+        AUC end time in seconds.
+    max_event_index : int, default=12
+        Number of first events for AUC and single-event plots.
+    session_name_for_auc : str or None, default="Recall"
+        Session name restriction for AUC plotting. Set to None to compute across all sessions.
+    """
+    group_output_root.mkdir(parents=True, exist_ok=True)
+
+    for event_label, event_table_key in event_types.items():
+
+        output_dir = group_output_root / event_label
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        group_peri_event_dataframe = completed_pipeline.build_group_peri_event_dataframe(EpochingSpec(event_table_key))
+
+        if group_peri_event_dataframe.empty:
+            print(f"[GROUP] No data for event type {event_label!r} -> skipping")
+            continue
+
+        group_analyzer = PhotometryGroupAnalyzer(
+            session_level_peri_event_dataframe=group_peri_event_dataframe,
+            output_directory=output_dir,
+        )
+
+        group_analyzer.plot_group_average_all_events()
+        group_analyzer.plot_group_average_single_event(event_index=1)
+        group_analyzer.plot_all_single_event_group_averages()
+
+        group_analyzer.plot_group_event_auc_across_first_events(
+            auc_window_start_s=auc_window_start_s,
+            auc_window_end_s=auc_window_end_s,
+            max_event_index=max_event_index,
+            session_name=session_name_for_auc,
+        )
+
+        for animal in group_analyzer.metadata_dataframe["animal"].astype(str).values:
+            try:
+                group_analyzer.plot_animal_auc_window_benchmark_3d(
+                    animal=animal,
+                    auc_window_start_s=auc_window_start_s,
+                    auc_window_end_s=auc_window_end_s,
+                    max_event_index=max_event_index,
+                    session_name=session_name_for_auc,
+                )
+            except ValueError as exc:
+                print(f"[GROUP] Skip animal={animal}: {exc}")

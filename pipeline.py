@@ -23,14 +23,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
+import numpy as np
 import pandas as pd
 
+import params
+from epoching import EpochingSpec, EventEpochExtractor
 from params import animal_output_dirs
 from session import PhotometrySession
 from group_analysis import (
     build_session_peri_event_long_dataframe,
     PhotometryGroupAnalyzer,
 )
+from signal_processing import extract_epoched_data
 
 
 @dataclass
@@ -89,9 +93,26 @@ class PhotometryPipeline:
             [name for name in os.listdir(base_directory) if name.startswith("Rat")]
         )
 
-    def build_group_peri_event_dataframe(self) -> pd.DataFrame:
+    def build_group_peri_event_dataframe(
+            self,
+            epoching_spec: EpochingSpec,
+            signal_key: str = "zscore",
+    ) -> pd.DataFrame:
         """
-        Build a concatenated long-form peri-event dataframe from all completed sessions.
+        Build a concatenated long-form peri-event dataframe from all completed sessions,
+        using an event-table-driven epoching specification.
+
+        Parameters
+        ----------
+        epoching_spec : EpochingSpec
+            Specifies which event table to use for epoch extraction.
+            Example event keys:
+            - "cs_led_cluster_first_onsets"
+            - "cs_led_cluster_first_offsets"
+            - "freezing_cluster_first_onsets"
+            - "freezing_cluster_first_offsets"
+        signal_key : str, default="zscore"
+            Which preprocessed continuous signal to epoch. Typically "zscore".
 
         Returns
         -------
@@ -101,29 +122,69 @@ class PhotometryPipeline:
         Raises
         ------
         ValueError
-            If no session contains peri-event outputs.
+            If no sessions contribute data for the requested epoching specification.
         """
-        session_level_dataframes = []
+        session_level_dataframes: list[pd.DataFrame] = []
 
         for completed_session in self.results:
-            if (
-                    completed_session.epochs_dff is None
-                    or completed_session.epochs_z is None
-                    or completed_session.peri_t is None
-            ):
+            # Requires signal processing + event sorting to have been run
+            # if completed_session.df_clean is None:
+            #     continue
+            # if completed_session.peri_t is None:
+            #     continue
+            # if completed_session.preprocessed_signals is None:
+            #     continue
+            # if signal_key not in completed_session.preprocessed_signals:
+            #     continue
+            # if getattr(completed_session, "event_tables", None) is None:
+            #     continue
+
+            time_s = completed_session.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
+
+            # Select event times from the requested event table
+            event_times_s = EventEpochExtractor.get_event_times_s_from_event_tables(
+                event_tables=completed_session.event_tables,
+                epoching_spec=epoching_spec,
+                timestamp_column="TimeStamp",
+            )
+
+            # Skip sessions with no such event type (e.g. no freezing)
+            if event_times_s is None or event_times_s.size == 0:
                 continue
+
+            n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
+            n_post = int(params.time_post_event_s * params.sample_rate_hz)
+
+            # Epoch just the requested signal (zscore)
+            epochs_by_signal = EventEpochExtractor.extract_epochs_for_signals(
+                time_s=time_s,
+                event_times_s=event_times_s,
+                preprocessed_signals={signal_key: completed_session.preprocessed_signals[signal_key]},
+                n_pre=n_pre,
+                n_post=n_post,
+                extract_epoched_data_callable=extract_epoched_data,
+            )
+
+            epochs_z = epochs_by_signal[signal_key]
+
+            dt_s = float(np.median(np.diff(time_s)))
+            peri_t = (np.arange(-n_pre, n_post, dtype=float) * dt_s)
 
             session_dataframe = build_session_peri_event_long_dataframe(
                 animal=completed_session.animal,
                 session_name=completed_session.session_name,
-                peri_t=completed_session.peri_t,
-                epochs_z=completed_session.epochs_z,
+                peri_t=peri_t,
+                epochs_z=epochs_z,
             )
+            session_dataframe["event_type"] = epoching_spec.event_table_key
 
             session_level_dataframes.append(session_dataframe)
 
         if not session_level_dataframes:
-            raise ValueError("No peri-event session outputs available for group analysis")
+            raise ValueError(
+                "No peri-event session outputs available for group analysis "
+                f"for event_table_key={epoching_spec.event_table_key!r}"
+            )
 
         return pd.concat(session_level_dataframes, ignore_index=True)
 
