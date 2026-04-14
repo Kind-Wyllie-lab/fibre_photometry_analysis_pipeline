@@ -25,39 +25,6 @@ class EventEpochExtractor:
     """
 
     @staticmethod
-    def get_event_times_s_from_event_tables(
-        event_tables: dict[str, pd.DataFrame],
-        event_table_key : str = None,
-    ) -> Optional[np.ndarray]:
-        """
-        Get event timestamps (seconds) for epoch extraction.
-
-        Parameters
-        ----------
-        event_tables : dict[str, pandas.DataFrame]
-            Dictionary of event dataframes returned by `process_events`.
-        epoching_spec : EpochingSpec
-            Selection of which event table to use.
-        timestamp_column : str, default="TimeStamp"
-            Timestamp column in the event table (ms).
-
-        Returns
-        -------
-        numpy.ndarray or None
-            Event timestamps in seconds. Returns None if the requested event
-            table does not exist or is empty.
-        """
-        if event_table_key not in event_tables:
-            return None
-
-        df_events = event_tables[event_table_key]
-        if not len(df_events):
-            return None
-
-        event_times_s = event_tables[event_table_key]
-        return event_times_s
-
-    @staticmethod
     def extract_epochs_for_signals(
         time_s: np.ndarray,
         event_times_s: np.ndarray,

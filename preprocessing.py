@@ -145,20 +145,6 @@ def add_event_columns_from_raw(
     result[output_led_column] = 0
     result[output_freezing_column] = np.nan
 
-    # --- Strategy A: Simple encoding (Input1*2*1 style) ---
-    if source_column_simple in df_raw.columns:
-        simple_series = df_raw[source_column_simple]
-
-        simple_led = simple_series.map(
-            lambda x: 0 if pd.isna(x) else (_extract_last_digit_as_int(str(x)) or 0)
-        ).astype(int)
-
-        # Store as LED output (no "+1" shift; keep raw TTL digit)
-        # If you really need +1 mapping, change to: (digit + 1)
-        result[output_led_column] = simple_led
-
-    # --- Strategy B: Multiplex encoding (CH1_Input1...;CH1_onset...;CH1_offset... ) ---
-    # We parse row-by-row and update LED/freezing when present.
     if source_column_multiplex in df_raw.columns:
         multiplex_series = df_raw[source_column_multiplex]
 

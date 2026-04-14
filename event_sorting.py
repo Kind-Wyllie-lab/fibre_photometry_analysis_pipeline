@@ -378,6 +378,11 @@ def process_ttl_events(
         gap_threshold_ms=gap_threshold_ms,
         timestamp_column="TimeStamp",
     )
+    if led_column not in df_clean.columns:
+        raise ValueError(f"Missing LED column: {led_column!r}")
+
+    raw_led_mask = pd.to_numeric(df_clean[led_column], errors="coerce").fillna(0).astype(int).clip(0, 1) == 1
+    raw_led_events_s = df_clean.loc[raw_led_mask, "TimeStamp"].to_numpy(dtype=float) / 1000.0
 
     # -----------------------
     # Freezing onsets/offsets
@@ -437,6 +442,7 @@ def process_ttl_events(
 
     return {
         "LED_events": {
+            "raw_LED_events": raw_led_events_s,
             "cs_onsets": cs_onsets_s,
             "cs_offsets": cs_offsets_s,
         },

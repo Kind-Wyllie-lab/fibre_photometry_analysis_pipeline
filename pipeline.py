@@ -130,10 +130,7 @@ class PhotometryPipeline:
             time_s = completed_session.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
 
             # Select event times from the requested event table
-            event_times_s = EventEpochExtractor.get_event_times_s_from_event_tables(
-                event_tables=completed_session.event_tables,
-                event_table_key=event_table_key,
-            )
+            event_times_s = completed_session.event_tables[event_table_key]
 
             # Skip sessions with no such event type (e.g. no freezing)
             if event_times_s is None or event_times_s.size == 0:
@@ -213,7 +210,7 @@ class PhotometryPipeline:
         """
         self.results = []
 
-        for animal in self.get_animal_names():
+        for animal in ['Rat_4879']:#self.get_animal_names():
             print(animal)
             for session_name in self.session_names:
                 print(session_name)

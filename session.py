@@ -188,10 +188,7 @@ class PhotometrySession:
         time_s = self.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
 
         # Select event times from the requested event table
-        self.event_times_s = EventEpochExtractor.get_event_times_s_from_event_tables(
-            event_tables= self.event_tables['LED_events'],
-            event_table_key='cs_onsets',
-        )
+        self.event_times_s = self.event_tables['LED_events']['cs_onsets']
 
         n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
         n_post = int(params.time_post_event_s * params.sample_rate_hz)
