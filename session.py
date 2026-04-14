@@ -282,27 +282,6 @@ class PhotometrySession:
 
         if self.run_signal_processing:
             self.fluorescence_processing()
-        #
-        # self.t_zero_s = self.first_events.iloc[0]["TimeStamp"] / 1000.0
-        #
-        # time_s = self.df_clean["TimeStamp"].values / 1000.0
-        #
-        # n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
-        # n_post = int(params.time_post_event_s * params.sample_rate_hz)
-        # self.peri_t = np.arange(-n_pre, n_post)/params.sample_rate_hz
-        # events_selected = select_events_from_params(self.freezing_onsets)
-        # events_to_use = filter_first_event(events_selected, False) #self.skip_first_event
-        #
-        # if events_to_use.empty:
-        #     raise ValueError("No events remaining after selection/filtering — check params")
-        #
-        # event_times_s = events_to_use["TimeStamp"].values / 1000.0
-        #
-        # self.epochs_dff = extract_epoched_data(self.preprocessed_signals['dff'], time_s, event_times_s, n_pre, n_post)
-        # self.epochs_z = extract_epoched_data(self.preprocessed_signals['zscore'], time_s, event_times_s, n_pre, n_post)
-        #
-        # if self.run_plotting:
-        #     self.run_plotting_stage()
 
         return self
 
