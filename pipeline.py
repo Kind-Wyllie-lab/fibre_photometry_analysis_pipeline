@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 import params
-from epoching import EpochingSpec, EventEpochExtractor
+from epoching import EventEpochExtractor
 from params import animal_output_dirs
 from session import PhotometrySession
 from group_analysis import (
@@ -95,7 +95,7 @@ class PhotometryPipeline:
 
     def build_group_peri_event_dataframe(
             self,
-            epoching_spec: EpochingSpec,
+            event_table_key: str = None,
             signal_key: str = "zscore",
     ) -> pd.DataFrame:
         """
@@ -127,24 +127,12 @@ class PhotometryPipeline:
         session_level_dataframes: list[pd.DataFrame] = []
 
         for completed_session in self.results:
-            # Requires signal processing + event sorting to have been run
-            # if completed_session.df_clean is None:
-            #     continue
-            # if completed_session.peri_t is None:
-            #     continue
-            # if completed_session.preprocessed_signals is None:
-            #     continue
-            # if signal_key not in completed_session.preprocessed_signals:
-            #     continue
-            # if getattr(completed_session, "event_tables", None) is None:
-            #     continue
-
             time_s = completed_session.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
 
             # Select event times from the requested event table
             event_times_s = EventEpochExtractor.get_event_times_s_from_event_tables(
                 event_tables=completed_session.event_tables,
-                epoching_spec=epoching_spec,
+                event_table_key=event_table_key,
                 timestamp_column="TimeStamp",
             )
 
@@ -176,14 +164,14 @@ class PhotometryPipeline:
                 peri_t=peri_t,
                 epochs_z=epochs_z,
             )
-            session_dataframe["event_type"] = epoching_spec.event_table_key
+            session_dataframe["event_type"] = event_table_key
 
             session_level_dataframes.append(session_dataframe)
 
         if not session_level_dataframes:
             raise ValueError(
                 "No peri-event session outputs available for group analysis "
-                f"for event_table_key={epoching_spec.event_table_key!r}"
+                f"for event_table_key={event_table_key!r}"
             )
 
         return pd.concat(session_level_dataframes, ignore_index=True)

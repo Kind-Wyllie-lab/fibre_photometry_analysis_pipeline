@@ -6,20 +6,6 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-@dataclass(frozen=True)
-class EpochingSpec:
-    """
-    Specification for extracting peri-event epochs from continuous signals.
-
-    Parameters
-    ----------
-    event_table_key : str
-        Key in `event_tables` dict pointing to the event dataframe to use.
-        Example: ``"cs_led_cluster_first_onsets"`` or ``"freezing_cluster_first_onsets"``.
-    """
-
-    event_table_key: str
-
 class EventEpochExtractor:
     """
     Extract peri-event epochs from preprocessed signals based on event tables.
@@ -41,7 +27,7 @@ class EventEpochExtractor:
     @staticmethod
     def get_event_times_s_from_event_tables(
         event_tables: dict[str, pd.DataFrame],
-        epoching_spec: EpochingSpec,
+        event_table_key : str = None,
         timestamp_column: str = "TimeStamp",
     ) -> Optional[np.ndarray]:
         """
@@ -62,16 +48,16 @@ class EventEpochExtractor:
             Event timestamps in seconds. Returns None if the requested event
             table does not exist or is empty.
         """
-        if epoching_spec.event_table_key not in event_tables:
+        if event_table_key not in event_tables:
             return None
 
-        df_events = event_tables[epoching_spec.event_table_key]
+        df_events = event_tables[event_table_key]
         if df_events is None or df_events.empty:
             return None
 
         if timestamp_column not in df_events.columns:
             raise ValueError(
-                f"Event table {epoching_spec.event_table_key!r} missing column {timestamp_column!r}"
+                f"Event table {event_table_key!r} missing column {timestamp_column!r}"
             )
 
         df_for_epoching = df_events.copy()
