@@ -27,7 +27,7 @@ import pandas as pd
 
 import params
 from preprocessing import extract_session_raw_data
-from event_sorting import process_events
+from event_sorting import process_ttl_events
 from signal_processing import filter_first_event, preprocess_photometry_dff_and_zscore, \
     extract_epoched_data, select_events_from_params
 from plotting import PhotometryPlotter
@@ -170,67 +170,6 @@ class PhotometrySession:
             return False
         return False
 
-    def raw_data_preprocessing(self) -> pd.DataFrame:
-        """
-        Execute preprocessing for the current session.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Cleaned fluorescence dataframe.
-        """
-        self.df_clean = extract_session_raw_data(str(self.raw_data_path), self.output_directory)
-        return self.df_clean
-
-    def ttl_events_processing(self) -> pd.DataFrame:
-        """
-        Execute event sorting for the current session.
-
-        Returns
-        -------
-        pandas.DataFrame
-            First-event dataframe.
-
-        Raises
-        ------
-        ValueError
-            If preprocessing data are unavailable.
-        """
-        if self.df_clean is None:
-            raise ValueError("Preprocessing must be run before event sorting.")
-
-        self.event_tables = process_events(self.df_clean, self.output_directory)
-
-    def fluorescence_processing(self) -> None:
-        """
-        Execute signal processing and peri-event extraction for the current session.
-
-        Raises
-        ------
-        ValueError
-            If cleaned fluorescence or event data are unavailable.
-        """
-        if self.df_clean is None:
-            raise ValueError("Preprocessing must be run before signal processing.")
-        if self.event_tables is None:
-            raise ValueError("Event sorting must be run before signal processing.")
-
-        self.preprocessed_signals = preprocess_photometry_dff_and_zscore(
-            df_clean=self.df_clean,
-            calcium_channel='CH1-470',
-            reference_channel='CH1-410',
-            baseline_interval_samples=None,
-            control_source="410",  # "410" or "baseline"
-            apply_baseline_correction=False,  # True or False
-            enable_smoothing=False,
-            smoothing_window_length=11,
-            smoothing_polyorder=3,
-            background_calcium=None,
-            background_reference=None,
-            baseline_smoothness_penalty=1e6,
-            baseline_asymmetry_penalty=0.01,
-        )
-
     def run_plotting_stage(self) -> None:
         """
         Execute all plotting routines for the current session.
@@ -270,15 +209,25 @@ class PhotometrySession:
         PhotometrySession
             The current session instance after execution.
         """
+        self.df_clean = extract_session_raw_data(str(self.raw_data_path), self.output_directory)
 
-        if self.run_preprocessing:
-            self.raw_data_preprocessing()
+        self.event_tables = process_ttl_events(self.df_clean, self.output_directory)
 
-        if self.run_event_sorting:
-            self.ttl_events_processing()
-
-        if self.run_signal_processing:
-            self.fluorescence_processing()
+        self.preprocessed_signals = preprocess_photometry_dff_and_zscore(
+            df_clean=self.df_clean,
+            calcium_channel='CH1-470',
+            reference_channel='CH1-410',
+            baseline_interval_samples=None,
+            control_source="410",  # "410" or "baseline"
+            apply_baseline_correction=False,  # True or False
+            enable_smoothing=False,
+            smoothing_window_length=11,
+            smoothing_polyorder=3,
+            background_calcium=None,
+            background_reference=None,
+            baseline_smoothness_penalty=1e6,
+            baseline_asymmetry_penalty=0.01,
+        )
 
         return self
 

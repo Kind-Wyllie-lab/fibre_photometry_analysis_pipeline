@@ -252,7 +252,7 @@ def save_event_tables(output_dir: str | Path, tables: dict[str, pd.DataFrame]) -
         print(f"Saved: {out_path}")
 
 
-def process_events(
+def process_ttl_events(
     df_clean: pd.DataFrame,
     output_dir: str | Path,
     led_column: str = "Events_LED",
