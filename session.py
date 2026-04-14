@@ -189,9 +189,8 @@ class PhotometrySession:
 
         # Select event times from the requested event table
         self.event_times_s = EventEpochExtractor.get_event_times_s_from_event_tables(
-            event_tables= self.event_tables,
-            event_table_key='cs_led_onsets_clustered',
-            timestamp_column="TimeStamp",
+            event_tables= self.event_tables['LED_events'],
+            event_table_key='cs_onsets',
         )
 
         n_pre = int(params.time_pre_event_s * params.sample_rate_hz)

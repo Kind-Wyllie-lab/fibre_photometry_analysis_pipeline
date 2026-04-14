@@ -28,7 +28,6 @@ class EventEpochExtractor:
     def get_event_times_s_from_event_tables(
         event_tables: dict[str, pd.DataFrame],
         event_table_key : str = None,
-        timestamp_column: str = "TimeStamp",
     ) -> Optional[np.ndarray]:
         """
         Get event timestamps (seconds) for epoch extraction.
@@ -52,20 +51,10 @@ class EventEpochExtractor:
             return None
 
         df_events = event_tables[event_table_key]
-        if df_events is None or df_events.empty:
+        if not len(df_events):
             return None
 
-        if timestamp_column not in df_events.columns:
-            raise ValueError(
-                f"Event table {event_table_key!r} missing column {timestamp_column!r}"
-            )
-
-        df_for_epoching = df_events.copy()
-
-        if len(df_for_epoching) > 0:
-            df_for_epoching = df_for_epoching.iloc[1:].reset_index(drop=True)
-
-        event_times_s = df_for_epoching[timestamp_column].to_numpy(dtype=float) / 1000.0
+        event_times_s = event_tables[event_table_key]
         return event_times_s
 
     @staticmethod

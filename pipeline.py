@@ -133,7 +133,6 @@ class PhotometryPipeline:
             event_times_s = EventEpochExtractor.get_event_times_s_from_event_tables(
                 event_tables=completed_session.event_tables,
                 event_table_key=event_table_key,
-                timestamp_column="TimeStamp",
             )
 
             # Skip sessions with no such event type (e.g. no freezing)

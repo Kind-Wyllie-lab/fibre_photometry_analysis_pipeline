@@ -251,6 +251,50 @@ def save_event_tables(output_dir: str | Path, tables: dict[str, pd.DataFrame]) -
         df.to_csv(out_path, index=False)
         print(f"Saved: {out_path}")
 
+def _cluster_and_get_first_last_event_times_s(
+    df_edges: pd.DataFrame,
+    gap_threshold_ms: float,
+    timestamp_column: str = "TimeStamp",
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Cluster edge events and return first/last timestamp per cluster in seconds.
+
+    Parameters
+    ----------
+    df_edges : pandas.DataFrame
+        Edge dataframe with a TimeStamp column (ms).
+    gap_threshold_ms : float
+        Gap threshold (ms) for clustering.
+    timestamp_column : str, default="TimeStamp"
+        Name of timestamp column.
+
+    Returns
+    -------
+    first_times_s : numpy.ndarray
+        First event time per cluster in seconds.
+    last_times_s : numpy.ndarray
+        Last event time per cluster in seconds.
+    """
+    if df_edges is None or df_edges.empty:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    clustered = cluster_events_by_gap(
+        df_edges,
+        gap_threshold_ms=gap_threshold_ms,
+        timestamp_column=timestamp_column,
+        cluster_column="cs_n",
+    )
+    first_df, last_df = summarize_clusters_first_last(
+        clustered,
+        timestamp_column=timestamp_column,
+        cluster_column="cs_n",
+    )
+
+    first_times_s = first_df[timestamp_column].to_numpy(dtype=float) / 1000.0 if not first_df.empty else np.array([], dtype=float)
+    last_times_s = last_df[timestamp_column].to_numpy(dtype=float) / 1000.0 if not last_df.empty else np.array([], dtype=float)
+
+    return first_times_s, last_times_s
+
 
 def process_ttl_events(
     df_clean: pd.DataFrame,
@@ -258,80 +302,146 @@ def process_ttl_events(
     led_column: str = "Events_LED",
     freezing_column: str = "freezing_event",
     gap_threshold_ms: float = event_gap_ms,
-) -> dict[str, pd.DataFrame]:
+    save_debug_csv: bool = True,
+) -> dict[str, dict[str, Optional[np.ndarray]]]:
     """
-    Event processing pipeline handling both LED (CS) and freezing event streams.
+    Extract CS (LED) and freezing onsets/offsets as simple event time arrays.
 
-    LED stream:
-    - CS onsets: LED 0->1 edges
-    - CS offsets: LED 1->0 edges
-    - Clustering for onsets and offsets is performed independently using `gap_threshold_ms`.
-    - "First CS onsets" (your previous `first_events`) are provided as the first onset per cluster.
-    - "CS offsets" are similarly summarized via clustered offset events.
-
-    Freezing stream:
-    - `freezing_event` is expected to be a binary state (0/1) if you have it as a state,
-      OR an edge-coded column where you stored 1=onset and 0=offset.
-    - This function treats it as a *state* by default if it contains continuous 0/1 states.
-      If it is *edge-coded* (sparse 0/1 only at event rows), you should convert it to a state
-      beforehand or use the onset/offset extraction directly on a state column.
+    This function returns a minimal event representation suitable for epoching:
+    - CS onsets  : first onset per "CS burst"/cluster (gap-based clustering of LED rising edges)
+    - CS offsets : last offset per "CS burst"/cluster (gap-based clustering of LED falling edges)
+    - Freezing onsets/offsets: edges derived from a freezing *state* (0/1), which is
+      constructed by forward-filling a sparse `freezing_event` column if needed.
 
     Parameters
     ----------
     df_clean : pandas.DataFrame
-        Cleaned dataframe containing at least TimeStamp plus event columns.
+        Clean dataframe containing at least ``TimeStamp`` and the TTL-derived columns.
     output_dir : str or Path
-        Output directory for generated CSVs.
+        Output directory for optional debug CSV saving.
     led_column : str, default="Events_LED"
-        LED binary column name.
+        Binary LED column (0/1).
     freezing_column : str, default="freezing_event"
-        Freezing event column name.
+        Column containing freezing transitions (sparse) or state (dense).
     gap_threshold_ms : float, default=event_gap_ms
-        Gap threshold for clustering.
+        Gap threshold (ms) used to cluster repeated TTL pulses into a single CS burst.
+    save_debug_csv : bool, default=True
+        Whether to save intermediate edges to CSV for inspection.
 
     Returns
     -------
-    dict[str, pandas.DataFrame]
-        Dictionary of all generated event tables.
+    dict
+        Dictionary with two keys:
+
+        - ``"LED_events"``: dict with:
+            - ``"cs_onsets"`` : numpy.ndarray (seconds)
+            - ``"cs_offsets"``: numpy.ndarray (seconds)
+
+        - ``"freezing_events"``: dict with:
+            - ``"freezing_onsets"`` : numpy.ndarray (seconds) or None
+            - ``"freezing_offsets"``: numpy.ndarray (seconds) or None
+
+        If no freezing column exists or no freezing transitions are found,
+        freezing arrays are returned as None.
     """
     validate_event_data(df_clean, stage="cleaned_input")
 
-    tables: dict[str, pd.DataFrame] = {}
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- LED CS stream: onsets + offsets ---
-    led_tables = process_event_stream(
-        df_clean=df_clean,
+    # -----------------------
+    # LED (CS) onsets/offsets
+    # -----------------------
+    led_onset_edges = extract_edge_events_from_binary_column(
+        df_clean,
         event_column=led_column,
-        gap_threshold_ms=gap_threshold_ms,
-        stream_name="cs_led",
+        edge="onset",
         timestamp_column="TimeStamp",
     )
-    tables.update(led_tables)
+    led_offset_edges = extract_edge_events_from_binary_column(
+        df_clean,
+        event_column=led_column,
+        edge="offset",
+        timestamp_column="TimeStamp",
+    )
 
-    # --- Freezing stream: interpret as state when possible ---
-    # If freezing_event is sparse-coded (NaN most rows), convert NaN->previous value to build a state.
+    # CS onsets: FIRST onset per cluster (burst)
+    cs_onsets_s, _ = _cluster_and_get_first_last_event_times_s(
+        df_edges=led_onset_edges,
+        gap_threshold_ms=gap_threshold_ms,
+        timestamp_column="TimeStamp",
+    )
+
+    # CS offsets: LAST offset per cluster (burst)
+    _, cs_offsets_s = _cluster_and_get_first_last_event_times_s(
+        df_edges=led_offset_edges,
+        gap_threshold_ms=gap_threshold_ms,
+        timestamp_column="TimeStamp",
+    )
+
+    # -----------------------
+    # Freezing onsets/offsets
+    # -----------------------
+    freezing_onsets_s: Optional[np.ndarray] = None
+    freezing_offsets_s: Optional[np.ndarray] = None
+
     if freezing_column in df_clean.columns:
         freezing_series = pd.to_numeric(df_clean[freezing_column], errors="coerce")
 
-        # If column is sparse with NaNs, forward-fill to create a state-like series (starts at 0).
-        if freezing_series.isna().any():
-            freezing_state = freezing_series.ffill().fillna(0).astype(int).clip(0, 1)
-        else:
-            freezing_state = freezing_series.fillna(0).astype(int).clip(0, 1)
+        # Build a binary state even if the column is sparse (NaN except at transitions)
+        freezing_state = freezing_series.ffill().fillna(0).astype(int).clip(0, 1)
 
         df_freeze_state = df_clean[["TimeStamp"]].copy()
         df_freeze_state["freezing_state"] = freezing_state
 
-        freeze_tables = process_event_stream(
-            df_clean=df_freeze_state,
+        freeze_onset_edges = extract_edge_events_from_binary_column(
+            df_freeze_state,
             event_column="freezing_state",
-            gap_threshold_ms=gap_threshold_ms,
-            stream_name="freezing",
+            edge="onset",
             timestamp_column="TimeStamp",
         )
-        tables.update(freeze_tables)
+        freeze_offset_edges = extract_edge_events_from_binary_column(
+            df_freeze_state,
+            event_column="freezing_state",
+            edge="offset",
+            timestamp_column="TimeStamp",
+        )
 
-    save_event_tables(output_dir, tables)
+        # For freezing we usually want the actual edges (not "burst clustering"),
+        # but you asked "treat onsets and offsets" similarly; clustering is optional.
+        # Here we DO NOT cluster by default because freezing is a state transition signal.
+        freezing_onsets_s = freeze_onset_edges["TimeStamp"].to_numpy(dtype=float) / 1000.0 if not freeze_onset_edges.empty else None
+        freezing_offsets_s = freeze_offset_edges["TimeStamp"].to_numpy(dtype=float) / 1000.0 if not freeze_offset_edges.empty else None
 
-    print("SUCCESS: events processed (LED CS + freezing)")
-    return tables
+        # If you *do* want clustering for freezing as well, swap the two lines above with:
+        # freezing_onsets_s, _ = _cluster_and_get_first_last_event_times_s(freeze_onset_edges, gap_threshold_ms, "TimeStamp")
+        # _, freezing_offsets_s = _cluster_and_get_first_last_event_times_s(freeze_offset_edges, gap_threshold_ms, "TimeStamp")
+
+    # -----------------------
+    # Optional debug saving
+    # -----------------------
+    if save_debug_csv:
+        led_onset_edges.to_csv(output_dir / "led_onset_edges.csv", index=False)
+        led_offset_edges.to_csv(output_dir / "led_offset_edges.csv", index=False)
+        pd.DataFrame({"cs_onsets_s": cs_onsets_s}).to_csv(output_dir / "cs_onsets_s.csv", index=False)
+        pd.DataFrame({"cs_offsets_s": cs_offsets_s}).to_csv(output_dir / "cs_offsets_s.csv", index=False)
+
+        if freezing_column in df_clean.columns:
+            # Save only if computed
+            if freezing_onsets_s is not None:
+                pd.DataFrame({"freezing_onsets_s": freezing_onsets_s}).to_csv(output_dir / "freezing_onsets_s.csv", index=False)
+            if freezing_offsets_s is not None:
+                pd.DataFrame({"freezing_offsets_s": freezing_offsets_s}).to_csv(output_dir / "freezing_offsets_s.csv", index=False)
+
+    print("SUCCESS: ttl events processed (simple dict outputs)")
+
+    return {
+        "LED_events": {
+            "cs_onsets": cs_onsets_s,
+            "cs_offsets": cs_offsets_s,
+        },
+        "freezing_events": {
+            "freezing_onsets": freezing_onsets_s,
+            "freezing_offsets": freezing_offsets_s,
+        },
+    }
