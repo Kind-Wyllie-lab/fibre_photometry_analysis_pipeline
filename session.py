@@ -270,9 +270,6 @@ class PhotometrySession:
         PhotometrySession
             The current session instance after execution.
         """
-        print("=" * 80)
-        print(f"RUNNING SESSION | animal={self.animal} | session={self.session_name}")
-        print("=" * 80)
 
         if self.run_preprocessing:
             self.raw_data_preprocessing()
