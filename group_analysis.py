@@ -384,7 +384,7 @@ class PhotometryGroupAnalyzer:
             if len(time_values_s) < 2:
                 continue
 
-            auc_value = float(np.trapz(zscore_values, x=time_values_s))
+            auc_value = float(np.trapezoid(zscore_values, x=time_values_s))
 
             animal_event_auc_rows.append(
                 {

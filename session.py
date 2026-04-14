@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 import params
+from epoching import EventEpochExtractor
 from preprocessing import extract_session_raw_data
 from event_sorting import process_ttl_events
 from signal_processing import filter_first_event, preprocess_photometry_dff_and_zscore, \
@@ -184,11 +185,35 @@ class PhotometrySession:
 
         session_stem = f"{self.animal}_{self.session_name}"
 
+        time_s = self.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
+
+        # Select event times from the requested event table
+        self.event_times_s = EventEpochExtractor.get_event_times_s_from_event_tables(
+            event_tables= self.event_tables,
+            event_table_key='cs_led_onsets_clustered',
+            timestamp_column="TimeStamp",
+        )
+
+        n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
+        n_post = int(params.time_post_event_s * params.sample_rate_hz)
+
+        # Epoch just the requested signal (zscore)
+        epochs_by_signal = EventEpochExtractor.extract_epochs_for_signals(
+            time_s=time_s,
+            event_times_s=self.event_times_s,
+            preprocessed_signals={'zscore': self.preprocessed_signals['zscore']},
+            n_pre=n_pre,
+            n_post=n_post,
+            extract_epoched_data_callable=extract_epoched_data,
+        )
+        dt_s = float(np.median(np.diff(time_s)))
+        self.peri_t = (np.arange(-n_pre, n_post, dtype=float) * dt_s)
+
+        self.epochs_z = epochs_by_signal['zscore']
         plotter = PhotometryPlotter(
             df_clean=self.df_clean,
             dff_fitted=self.preprocessed_signals['dff'],
             zscore=self.preprocessed_signals['zscore'],
-            epochs_dff=self.epochs_dff,
             epochs_z=self.epochs_z,
             peri_t=self.peri_t,
             stem=session_stem,
@@ -228,6 +253,6 @@ class PhotometrySession:
             baseline_smoothness_penalty=1e6,
             baseline_asymmetry_penalty=0.01,
         )
-
+        self.run_plotting_stage()
         return self
 

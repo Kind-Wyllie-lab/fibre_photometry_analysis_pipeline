@@ -92,8 +92,7 @@ class PhotometryPlotter:
         Full-session motion-corrected ΔF/F trace normalized to fitted reference.
     zscore : numpy.ndarray
         Full-session z-score trace.
-    epochs_dff : numpy.ndarray
-        Peri-event ΔF/F array with shape ``(n_trials, n_timepoints)``.
+
     epochs_z : numpy.ndarray
         Peri-event z-score array with shape ``(n_trials, n_timepoints)``.
     peri_t : numpy.ndarray
@@ -124,7 +123,6 @@ class PhotometryPlotter:
     df_clean: pd.DataFrame
     dff_fitted: np.ndarray
     zscore: np.ndarray
-    epochs_dff: np.ndarray
     epochs_z: np.ndarray
     peri_t: np.ndarray
     stem: str
@@ -326,25 +324,9 @@ class PhotometryPlotter:
             Long-format dataframe with columns ``trial``, ``time_s``,
             ``signal_value``, and ``signal_kind``.
         """
-        n_trials, n_timepoints = self.epochs_dff.shape
-        if self.epochs_z.shape != (n_trials, n_timepoints):
-            raise ValueError(
-                f"epochs_z shape {self.epochs_z.shape} does not match epochs_dff shape {self.epochs_dff.shape}"
-            )
-        if len(self.peri_t) != n_timepoints:
-            raise ValueError(
-                f"peri_t length {len(self.peri_t)} != number of epoch timepoints {n_timepoints}"
-            )
+        n_trials, n_timepoints = self.epochs_z.shape
 
         trial_index = np.arange(1, n_trials + 1, dtype=int)
-
-        epochs_dff_long = (
-            pd.DataFrame(self.epochs_dff, index=trial_index, columns=self.peri_t)
-            .rename_axis(index="trial")
-            .reset_index()
-            .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
-            .assign(signal_kind="ΔF/F")
-        )
 
         epochs_z_long = (
             pd.DataFrame(self.epochs_z, index=trial_index, columns=self.peri_t)
@@ -354,10 +336,7 @@ class PhotometryPlotter:
             .assign(signal_kind="Z-score")
         )
 
-        peri_event_long_dataframe = pd.concat(
-            [epochs_dff_long, epochs_z_long],
-            ignore_index=True,
-        )
+        peri_event_long_dataframe = epochs_z_long
         peri_event_long_dataframe["time_s"] = peri_event_long_dataframe["time_s"].astype(float)
         peri_event_long_dataframe["trial"] = peri_event_long_dataframe["trial"].astype(int)
 
@@ -566,6 +545,7 @@ class PhotometryPlotter:
         The x-axis is expressed in peri-event seconds. A shaded region indicates
         the amount of pre-trigger baseline used for epoch-local ΔF/F computation.
         """
+
         n_trials, n_timepoints = self.epochs_z.shape
         if len(self.peri_t) != n_timepoints:
             raise ValueError(
@@ -627,7 +607,7 @@ class PhotometryPlotter:
         """
         Plot peri-event heatmaps for ΔF/F and z-score across trials.
         """
-        n_trials, n_timepoints = self.epochs_dff.shape
+        n_trials, n_timepoints = self.epochs_z.shape
         if len(self.peri_t) != n_timepoints:
             raise ValueError(f"peri_t length {len(self.peri_t)} != n_timepoints {n_timepoints}")
 
@@ -636,7 +616,6 @@ class PhotometryPlotter:
         fig, axes = plt.subplots(2, 1, figsize=heatmap_figsize, sharex=True)
 
         heatmap_specs = [
-            (self.epochs_dff, "ΔF/F", heatmap_cmap_dff, heatmap_vmin_dff, heatmap_vmax_dff),
             (self.epochs_z, "Z-score", heatmap_cmap_z, heatmap_vmin_z, heatmap_vmax_z),
         ]
 
@@ -690,27 +669,6 @@ class PhotometryPlotter:
         fig.tight_layout()
         self._finalize_figure(fig, f"peri_event_heatmaps_{self.stem}")
 
-    def plot_peri_event_summary(self) -> None:
-        """
-        Plot peri-event data using the configured display mode.
-
-        Raises
-        ------
-        ValueError
-            If the configured peri-event plot mode is invalid.
-        """
-        if self.peri_event_plot_mode == "average":
-            self.plot_peri_event_average()
-            return
-
-        if self.peri_event_plot_mode == "trials":
-            self.plot_peri_event_trials()
-            return
-
-        raise ValueError(
-            f"Unsupported peri_event_plot_mode: {self.peri_event_plot_mode!r}"
-        )
-
     def run_all(self) -> None:
         """
         Generate all standard figures for a session.
@@ -721,7 +679,8 @@ class PhotometryPlotter:
 
         self.plot_full_fluorescence()
         self.plot_full_trace()
-        self.plot_peri_event_summary()
+        self.plot_peri_event_average()
+        self.plot_peri_event_trials()
         self.plot_peri_event_heatmaps()
 
         if self.save_figures_enabled:
