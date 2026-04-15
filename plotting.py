@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+import matplotlib as mpl
+from matplotlib.cm import ScalarMappable
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -388,16 +390,16 @@ class PhotometryPlotter:
         self._autoscale_y_to_signal(axes[0], y_470)
         axes[0].set_ylabel("470nm (AU)")
         axes[0].set_title(f"Full-session raw fluorescence ({self.stem})")
-        axes[0].grid(alpha=0.15)
+        # axes[0].grid(alpha=0.15)
         axes[0].legend(loc="upper right")
         self._set_ytick_params(axes[0])
 
         y_410 = self.df_clean["CH1-410"].to_numpy(dtype=float)
-        axes[1].plot(self.time_s, y_410, color=color_410_nm, lw=lw_trace, label="410nm (isosbestic)")
+        axes[1].plot(self.time_s, y_410, color=color_410_nm, lw=lw_trace, label="410nm (baseline)")
         self._autoscale_y_to_signal(axes[1], y_410)
         axes[1].set_ylabel("410nm (AU)")
         axes[1].set_xlabel("Time (s)")
-        axes[1].grid(alpha=0.15)
+        # axes[1].grid(alpha=0.15)
         axes[1].legend(loc="upper right")
         self._set_xtick_params(axes[1])
         self._set_ytick_params(axes[1])
@@ -462,15 +464,36 @@ class PhotometryPlotter:
         fig.tight_layout()
         self._finalize_figure(fig, f"dff_zscore_traces_{self.stem}")
 
-    def plot_peri_event_trials(self) -> None:
+    def plot_peri_event_trials(
+            self,
+            colormap_name: str = "Spectral",
+            line_alpha: float = 0.55,
+            linewidth: float = 1.1,
+            legend_max_trials: int = 12,
+            show_colorbar: bool = True,
+    ) -> None:
         """
-        Plot all peri-event z-score trials individually with a dark-to-light progression.
+        Plot all peri-event z-score trials individually using a diverging colormap.
 
-        Notes
-        -----
-        Trial order is preserved from first to last extracted event. The first trial
-        is plotted with the darkest color and the last trial with the lightest color.
-        The x-axis is expressed in peri-event seconds.
+        Parameters
+        ----------
+        colormap_name : str, default="Spectral"
+            Matplotlib colormap name. Diverging colormaps that work well include
+            "Spectral", "coolwarm", "RdBu_r", and "PiYG".
+        line_alpha : float, default=0.55
+            Alpha transparency for trial traces to improve overlap visibility.
+        linewidth : float, default=1.1
+            Line width for trial traces.
+        legend_max_trials : int, default=12
+            Maximum number of trial entries to include in the legend. If there are
+            more trials than this, the legend is suppressed (use the colorbar).
+        show_colorbar : bool, default=True
+            Whether to show a colorbar mapping trial index to colormap color.
+
+        Raises
+        ------
+        ValueError
+            If peri-event time base is inconsistent with epoch array shape.
         """
         n_trials, n_timepoints = self.epochs_z.shape
         if len(self.peri_t) != n_timepoints:
@@ -489,15 +512,13 @@ class PhotometryPlotter:
 
         figure, axis = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
 
-        trial_palette = self._build_progressive_lightness_palette(
-            base_color=color_zscore,
-            n_colors=n_trials,
-            min_lightness_mix=0.0,
-            max_lightness_mix=0.8,
-        )
+        # Diverging palette across trials
+        cmap = mpl.cm.get_cmap(colormap_name, n_trials if n_trials > 1 else 2)
+        norm = mpl.colors.Normalize(vmin=1, vmax=max(1, n_trials))
+
         trial_to_color = {
-            trial_number: trial_palette[trial_number - 1]
-            for trial_number in range(1, n_trials + 1)
+            trial_idx: cmap(norm(trial_idx))
+            for trial_idx in range(1, n_trials + 1)
         }
 
         sns.lineplot(
@@ -508,20 +529,21 @@ class PhotometryPlotter:
             units="trial",
             estimator=None,
             palette=trial_to_color,
-            linewidth=1.2,
-            alpha=self.trial_alpha,
-            legend=False,
+            linewidth=linewidth,
+            alpha=line_alpha,
+            legend=(n_trials <= legend_max_trials),
             ax=axis,
         )
 
-        baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
-        axis.axvspan(
-            -baseline_window_s,
-            0,
-            color="grey",
-            alpha=0.15,
-            label=f"Baseline window ({baseline_window_s:.1f} s)",
-        )
+        # baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
+        # axis.axvspan(
+        #     -baseline_window_s,
+        #     0,
+        #     color="grey",
+        #     alpha=0.15,
+        #     label=f"Baseline window ({baseline_window_s:.1f} s)",
+        #     zorder=0,
+        # )
         axis.axvline(0, color=color_event_onset, ls="--", lw=0.8, label="Event onset")
 
         axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
@@ -531,7 +553,32 @@ class PhotometryPlotter:
         axis.grid(alpha=0.3)
         self._set_xtick_params(axis)
         self._set_ytick_params(axis)
-        axis.legend()
+
+        # If legend is shown, make it compact and move it outside
+        if n_trials <= legend_max_trials:
+            axis.legend(
+                title="Trial",
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                borderaxespad=0.0,
+                frameon=False,
+            )
+        else:
+            # Keep only baseline/event labels in a small legend
+            axis.legend(
+                loc="upper right",
+                frameon=False,
+            )
+
+        # Colorbar gives a clean mapping from trial index -> color
+        if show_colorbar and n_trials > 1:
+            sm = ScalarMappable(norm=norm, cmap=cmap)
+            sm.set_array([])
+            colorbar = figure.colorbar(sm, ax=axis, pad=0.02)
+            colorbar.set_label("Trial index")
+            # Optionally reduce ticks density
+            if n_trials > 12:
+                colorbar.set_ticks(np.linspace(1, n_trials, 6, dtype=int))
 
         figure.tight_layout()
         self._finalize_figure(figure, f"peri_event_trials_zscore_{self.stem}")
@@ -576,13 +623,13 @@ class PhotometryPlotter:
         )
 
         baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
-        axis.axvspan(
-            -baseline_window_s,
-            0,
-            color="grey",
-            alpha=0.15,
-            label=f"Baseline window ({baseline_window_s:.1f} s)",
-        )
+        # axis.axvspan(
+        #     -baseline_window_s,
+        #     0,
+        #     color="grey",
+        #     alpha=0.15,
+        #     label=f"Baseline window ({baseline_window_s:.1f} s)",
+        # )
         axis.axvline(
             0,
             color=color_event_onset,

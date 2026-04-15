@@ -30,7 +30,7 @@ def animal_output_dirs(animal_num: str, session:str):
     out_root.mkdir(exist_ok=True)
     return out_root
 
-sample_rate_hz = 60.0
+sample_rate_hz = 30.0
 
 round_decimals = 4
 
@@ -41,8 +41,8 @@ baseline_samples = 1000
 
 event_gap_ms = 5000
 
-time_pre_event_s = 2
-time_post_event_s = 10
+time_pre_event_s = 10
+time_post_event_s = 40
 
 selected_clusters = list(range(0, 20)) #SELECTED_CLUSTERS = list(range(5, 15)), select Clusters 5-14
 
@@ -113,6 +113,7 @@ ytick_nbins = None
 heatmap_xtick_major = 2   # seconds between major ticks
 heatmap_xtick_minor = 1.0   # seconds between minor ticks
 
+heatmap_ytick_major_step = 1  # every Nth trial gets major tick label
 heatmap_ytick_major_step = 1  # every Nth trial gets major tick label
 heatmap_ytick_minor_step = 1  # minor grid lines every N trials
 heatmap_show_all_ylabels = True  # True=label every trial, False=every Nth

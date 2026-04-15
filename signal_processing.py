@@ -555,7 +555,7 @@ def extract_epoched_data(
     n_pre: int,
     n_post: int,
     compute_trial_baseline_dff: bool = False,
-    trial_baseline_window_s: float = 15.0,
+    trial_baseline_window_s: float = 5.0,
     trial_baseline_statistic: str = "mean",
     minimum_baseline_value: Optional[float] = None,
 ) -> np.ndarray:

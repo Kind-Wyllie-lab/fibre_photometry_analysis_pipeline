@@ -29,7 +29,7 @@ import params
 from epoching import EventEpochExtractor
 from preprocessing import extract_session_raw_data
 from event_sorting import process_ttl_events
-from signal_processing import filter_first_event, preprocess_photometry_dff_and_zscore, \
+from signal_processing import preprocess_photometry_dff_and_zscore, \
     extract_epoched_data, select_events_from_params
 from plotting import PhotometryPlotter
 
@@ -188,7 +188,7 @@ class PhotometrySession:
         time_s = self.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
 
         # Select event times from the requested event table
-        self.event_times_s = self.event_tables['LED_events']['cs_onsets']
+        self.event_times_s = self.event_tables['freezing_events']['freezing_offsets']
 
         n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
         n_post = int(params.time_post_event_s * params.sample_rate_hz)

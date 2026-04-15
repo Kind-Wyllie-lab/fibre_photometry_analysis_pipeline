@@ -302,7 +302,6 @@ def process_ttl_events(
     led_column: str = "Events_LED",
     freezing_column: str = "freezing_event",
     gap_threshold_ms: float = event_gap_ms,
-    save_debug_csv: bool = True,
 ) -> dict[str, dict[str, Optional[np.ndarray]]]:
     """
     Extract CS (LED) and freezing onsets/offsets as simple event time arrays.
@@ -325,8 +324,6 @@ def process_ttl_events(
         Column containing freezing transitions (sparse) or state (dense).
     gap_threshold_ms : float, default=event_gap_ms
         Gap threshold (ms) used to cluster repeated TTL pulses into a single CS burst.
-    save_debug_csv : bool, default=True
-        Whether to save intermediate edges to CSV for inspection.
 
     Returns
     -------
@@ -412,33 +409,12 @@ def process_ttl_events(
             timestamp_column="TimeStamp",
         )
 
-        # For freezing we usually want the actual edges (not "burst clustering"),
-        # but you asked "treat onsets and offsets" similarly; clustering is optional.
-        # Here we DO NOT cluster by default because freezing is a state transition signal.
         freezing_onsets_s = freeze_onset_edges["TimeStamp"].to_numpy(dtype=float) / 1000.0 if not freeze_onset_edges.empty else None
         freezing_offsets_s = freeze_offset_edges["TimeStamp"].to_numpy(dtype=float) / 1000.0 if not freeze_offset_edges.empty else None
 
-        # If you *do* want clustering for freezing as well, swap the two lines above with:
-        # freezing_onsets_s, _ = _cluster_and_get_first_last_event_times_s(freeze_onset_edges, gap_threshold_ms, "TimeStamp")
-        # _, freezing_offsets_s = _cluster_and_get_first_last_event_times_s(freeze_offset_edges, gap_threshold_ms, "TimeStamp")
-
-    # -----------------------
-    # Optional debug saving
-    # -----------------------
-    if save_debug_csv:
-        led_onset_edges.to_csv(output_dir / "led_onset_edges.csv", index=False)
-        led_offset_edges.to_csv(output_dir / "led_offset_edges.csv", index=False)
-        pd.DataFrame({"cs_onsets_s": cs_onsets_s}).to_csv(output_dir / "cs_onsets_s.csv", index=False)
-        pd.DataFrame({"cs_offsets_s": cs_offsets_s}).to_csv(output_dir / "cs_offsets_s.csv", index=False)
-
-        if freezing_column in df_clean.columns:
-            # Save only if computed
-            if freezing_onsets_s is not None:
-                pd.DataFrame({"freezing_onsets_s": freezing_onsets_s}).to_csv(output_dir / "freezing_onsets_s.csv", index=False)
-            if freezing_offsets_s is not None:
-                pd.DataFrame({"freezing_offsets_s": freezing_offsets_s}).to_csv(output_dir / "freezing_offsets_s.csv", index=False)
-
-    print("SUCCESS: ttl events processed (simple dict outputs)")
+        #cleanup wrong triggers at the beginning that occur sometimes
+        cs_onsets_s = np.array([i for i in cs_onsets_s if i > 90])
+        cs_offsets_s = np.array([i for i in cs_offsets_s if i > 120])
 
     return {
         "LED_events": {
