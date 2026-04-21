@@ -65,10 +65,10 @@ if __name__ == "__main__":
     completed_pipeline = run_pipeline()
 
     event_types = {
-        "cs_onsets": "cs_led_cluster_first_onsets",
-        "cs_offsets": "cs_led_cluster_first_offsets",
-        # "freezing_onsets": "freezing_cluster_first_onsets",
-        # "freezing_offsets": "freezing_cluster_first_offsets",
+        "LED_events": "cs_onsets",
+        "LED_events": "cs_offsets",
+        "freezing_onsets": "freezing_onsets",
+        "freezing_offsets": "freezing_offsets",
     }
 
     run_group_level_plots_for_event_types(

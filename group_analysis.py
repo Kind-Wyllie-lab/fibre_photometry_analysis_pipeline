@@ -1239,7 +1239,7 @@ def run_group_level_plots_for_event_types(
         output_dir = group_output_root / event_label
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        group_peri_event_dataframe = completed_pipeline.build_group_peri_event_dataframe(event_table_key)
+        group_peri_event_dataframe = completed_pipeline.build_group_peri_event_dataframe(event_label, event_table_key)
 
         if group_peri_event_dataframe.empty:
             print(f"[GROUP] No data for event type {event_label!r} -> skipping")

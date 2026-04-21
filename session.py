@@ -188,7 +188,7 @@ class PhotometrySession:
         time_s = self.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
 
         # Select event times from the requested event table
-        self.event_times_s = self.event_tables['freezing_events']['freezing_offsets']
+        self.event_times_s = self.event_tables['freezing_events']['freezing_onsets']
 
         n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
         n_post = int(params.time_post_event_s * params.sample_rate_hz)
@@ -249,6 +249,6 @@ class PhotometrySession:
             baseline_smoothness_penalty=1e6,
             baseline_asymmetry_penalty=0.01,
         )
-        self.run_plotting_stage()
+        # self.run_plotting_stage()
         return self
 
