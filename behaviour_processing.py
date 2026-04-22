@@ -1,0 +1,338 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+
+def _interval_duration_s(interval: tuple[float, float]) -> float:
+    start_s, end_s = interval
+    return max(0.0, float(end_s) - float(start_s))
+
+
+def _compute_overlap_duration_s(
+    interval: tuple[float, float],
+    freezing_intervals_s: np.ndarray,
+) -> float:
+    """
+    Compute total overlap duration between one interval and a set of freezing intervals.
+
+    Parameters
+    ----------
+    interval : tuple of float
+        (start_s, end_s) for the analysis window.
+    freezing_intervals_s : numpy.ndarray
+        Array of shape (n_intervals, 2) with freezing (start_s, end_s).
+
+    Returns
+    -------
+    float
+        Total overlapped duration in seconds.
+    """
+    start_s, end_s = interval
+    if end_s <= start_s or freezing_intervals_s.size == 0:
+        return 0.0
+
+    fs = freezing_intervals_s[:, 0]
+    fe = freezing_intervals_s[:, 1]
+
+    overlap_start = np.maximum(fs, start_s)
+    overlap_end = np.minimum(fe, end_s)
+    overlap = np.maximum(0.0, overlap_end - overlap_start)
+    return float(np.sum(overlap))
+
+
+def _pair_onsets_offsets_to_intervals(
+    onsets_s: np.ndarray,
+    offsets_s: np.ndarray,
+    recording_end_s: Optional[float] = None,
+) -> np.ndarray:
+    """
+    Pair freezing onsets and offsets into intervals.
+
+    Parameters
+    ----------
+    onsets_s : numpy.ndarray
+        Freezing onset times (seconds).
+    offsets_s : numpy.ndarray
+        Freezing offset times (seconds).
+    recording_end_s : float or None, default=None
+        Optional recording end time to close an open interval.
+
+    Returns
+    -------
+    numpy.ndarray
+        Freezing intervals array with shape (n_intervals, 2).
+
+    Notes
+    -----
+    - If an onset occurs without a later offset, and `recording_end_s` is provided,
+      the interval is closed at `recording_end_s`.
+    - If offsets are found before the first onset they are ignored.
+    """
+    onsets_s = np.asarray(onsets_s, dtype=float) if onsets_s is not None else np.array([], dtype=float)
+    offsets_s = np.asarray(offsets_s, dtype=float) if offsets_s is not None else np.array([], dtype=float)
+
+    onsets_s = np.sort(onsets_s[np.isfinite(onsets_s)])
+    offsets_s = np.sort(offsets_s[np.isfinite(offsets_s)])
+
+    if onsets_s.size == 0:
+        return np.zeros((0, 2), dtype=float)
+
+    intervals = []
+    j = 0
+    for onset in onsets_s:
+        while j < offsets_s.size and offsets_s[j] <= onset:
+            j += 1
+        if j < offsets_s.size:
+            intervals.append((float(onset), float(offsets_s[j])))
+            j += 1
+        else:
+            if recording_end_s is not None and recording_end_s > onset:
+                intervals.append((float(onset), float(recording_end_s)))
+
+    if not intervals:
+        return np.zeros((0, 2), dtype=float)
+
+    return np.asarray(intervals, dtype=float)
+
+
+def build_behavior_bout_intervals_from_cs(
+    cs_onsets_s: np.ndarray,
+    cs_offsets_s: np.ndarray,
+    pre_cs_duration_s: float = 120.0,
+    post_last_cs_duration_s: float = 30.0,
+    n_cs: int = 12,
+) -> dict[str, tuple[float, float]]:
+    """
+    Build named session intervals (pre-cs, cs_i, noncs_i, post) from CS onsets/offsets.
+
+    Parameters
+    ----------
+    cs_onsets_s : numpy.ndarray
+        CS onset times (seconds), expected at least `n_cs` entries.
+    cs_offsets_s : numpy.ndarray
+        CS offset times (seconds), expected at least `n_cs` entries.
+    pre_cs_duration_s : float, default=120.0
+        Duration before CS1 onset used as baseline/pre-cs interval.
+    post_last_cs_duration_s : float, default=30.0
+        Duration after CS12 offset used as post interval.
+    n_cs : int, default=12
+        Number of CS bouts.
+
+    Returns
+    -------
+    dict[str, tuple[float, float]]
+        Mapping from bout name -> (start_s, end_s).
+
+    Raises
+    ------
+    ValueError
+        If not enough CS onsets/offsets are provided or if times are inconsistent.
+    """
+    cs_onsets_s = np.asarray(cs_onsets_s, dtype=float)
+    cs_offsets_s = np.asarray(cs_offsets_s, dtype=float)
+
+    if cs_onsets_s.size < n_cs or cs_offsets_s.size < n_cs:
+        raise ValueError(f"Need at least {n_cs} cs onsets/offsets, got onsets={cs_onsets_s.size}, offsets={cs_offsets_s.size}")
+
+    cs_onsets_s = np.sort(cs_onsets_s)[:n_cs]
+    cs_offsets_s = np.sort(cs_offsets_s)[:n_cs]
+
+    if np.any(cs_offsets_s <= cs_onsets_s):
+        raise ValueError("Some CS offsets occur before/on CS onset; check CS timing extraction")
+
+    intervals: dict[str, tuple[float, float]] = {}
+
+    # pre-cs: 2 minutes before CS1 onset
+    cs1_onset = float(cs_onsets_s[0])
+    intervals["pre_cs"] = (cs1_onset - float(pre_cs_duration_s), cs1_onset)
+
+    # cs_i intervals
+    for i in range(n_cs):
+        intervals[f"cs_{i+1}"] = (float(cs_onsets_s[i]), float(cs_offsets_s[i]))
+
+    # noncs_i: between cs_i offset and cs_{i+1} onset, for i=1..(n_cs-1)
+    # You requested noncs_1..10 specifically; that corresponds to gaps after cs_1..cs_10 (i=0..9)
+    n_noncs = min(10, n_cs - 1)
+    for i in range(n_noncs):
+        intervals[f"noncs_{i+1}"] = (float(cs_offsets_s[i]), float(cs_onsets_s[i + 1]))
+
+    # post: 30 seconds after CS12 offset
+    intervals["post_cs12"] = (float(cs_offsets_s[n_cs - 1]), float(cs_offsets_s[n_cs - 1]) + float(post_last_cs_duration_s))
+
+    return intervals
+
+
+def compute_freezing_ratio_per_bout(
+    bout_intervals: dict[str, tuple[float, float]],
+    freezing_onsets_s: Optional[np.ndarray],
+    freezing_offsets_s: Optional[np.ndarray],
+    recording_end_s: Optional[float] = None,
+) -> dict[str, float]:
+    """
+    Compute freezing ratio per named bout interval.
+
+    Parameters
+    ----------
+    bout_intervals : dict[str, tuple[float, float]]
+        Named bout intervals.
+    freezing_onsets_s : numpy.ndarray or None
+        Freezing onset times (seconds). If None/empty, ratios will be 0.
+    freezing_offsets_s : numpy.ndarray or None
+        Freezing offset times (seconds). If None/empty, ratios will be 0.
+    recording_end_s : float or None, default=None
+        Used if there is an unclosed freezing onset.
+
+    Returns
+    -------
+    dict[str, float]
+        Mapping bout name -> freezing ratio in [0, 1].
+    """
+    if freezing_onsets_s is None or freezing_offsets_s is None:
+        return {name: 0.0 for name in bout_intervals.keys()}
+
+    freezing_intervals_s = _pair_onsets_offsets_to_intervals(
+        onsets_s=freezing_onsets_s,
+        offsets_s=freezing_offsets_s,
+        recording_end_s=recording_end_s,
+    )
+
+    ratios: dict[str, float] = {}
+    for name, interval in bout_intervals.items():
+        total_s = _interval_duration_s(interval)
+        if total_s <= 0:
+            ratios[name] = np.nan
+            continue
+        freeze_s = _compute_overlap_duration_s(interval, freezing_intervals_s)
+        ratios[name] = float(freeze_s / total_s)
+
+    return ratios
+
+def build_freezing_behavior_profile_table(
+    completed_sessions: list,
+    metadata_dataframe: pd.DataFrame,
+    animal_column: str = "animal",
+    group_column: str = "group",
+    session_column_name: str = "session_name",
+    pre_cs_duration_s: float = 120.0,
+    post_last_cs_duration_s: float = 30.0,
+    n_cs: int = 12,
+) -> pd.DataFrame:
+    """
+    Build a table of freezing ratios per session bout for all animals with freezing scored.
+
+    Parameters
+    ----------
+    completed_sessions : list
+        Iterable of session objects (from your pipeline). Each session should expose:
+        - animal (str)
+        - session_name (str)
+        - cs_onsets_s (np.ndarray)
+        - cs_offsets_s (np.ndarray)
+        - freezing_onsets_s (np.ndarray or None)
+        - freezing_offsets_s (np.ndarray or None)
+    metadata_dataframe : pandas.DataFrame
+        Table with `animal` and `group` columns (genotype).
+    animal_column : str, default="animal"
+        Column name in metadata for animal id.
+    group_column : str, default="group"
+        Column name in metadata for genotype/group.
+    session_column_name : str, default="session_name"
+        Output column name for session id.
+    pre_cs_duration_s : float, default=120.0
+        Pre-CS interval duration.
+    post_last_cs_duration_s : float, default=30.0
+        Post-CS12 interval duration.
+    n_cs : int, default=12
+        Number of CS bouts to consider.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per animal-session with freezing ratios for each bout and genotype/group.
+
+    Notes
+    -----
+    Sessions without freezing scored (missing or empty freezing onsets/offsets)
+    are skipped.
+    """
+    required_meta = {animal_column, group_column}
+    if not required_meta.issubset(metadata_dataframe.columns):
+        raise ValueError(f"metadata_dataframe must contain columns {required_meta}")
+
+    meta = metadata_dataframe[[animal_column, group_column]].copy()
+    meta = meta.rename(columns={animal_column: "animal", group_column: "group"})
+    meta["animal"] = meta["animal"].astype(str)
+    meta["group"] = meta["group"].astype(str)
+
+    rows = []
+
+    for sess in completed_sessions:
+        animal = str(getattr(sess, "animal"))
+        sess_name = str(getattr(sess, "session_name"))
+
+        cs_onsets_s = sess.event_tables['LED_events']['cs_onsets']
+        cs_offsets_s = sess.event_tables['LED_events']['cs_offsets']
+
+        freezing_onsets_s = sess.event_tables['freezing_events']['freezing_onsets']
+        freezing_offsets_s = sess.event_tables['freezing_events']['freezing_offsets']
+
+        # Skip sessions with no freezing scored
+        if freezing_onsets_s is None or freezing_offsets_s is None:
+            continue
+
+        if cs_onsets_s is None or cs_offsets_s is None:
+            continue
+
+        try:
+            bout_intervals = build_behavior_bout_intervals_from_cs(
+                cs_onsets_s=cs_onsets_s,
+                cs_offsets_s=cs_offsets_s,
+                pre_cs_duration_s=pre_cs_duration_s,
+                post_last_cs_duration_s=post_last_cs_duration_s,
+                n_cs=n_cs,
+            )
+        except ValueError:
+            # not enough cs events, malformed timings, etc.
+            continue
+
+        # Use end of post bout as recording_end for closing open freezing intervals if needed
+        recording_end_s = bout_intervals["post_cs12"][1]
+
+        ratios = compute_freezing_ratio_per_bout(
+            bout_intervals=bout_intervals,
+            freezing_onsets_s=freezing_onsets_s,
+            freezing_offsets_s=freezing_offsets_s,
+            recording_end_s=recording_end_s,
+        )
+
+        row = {
+            "animal": animal,
+            session_column_name: sess_name,
+        }
+        row.update(ratios)
+        rows.append(row)
+
+    behavior_df = pd.DataFrame(rows)
+    if behavior_df.empty:
+        return behavior_df
+
+    behavior_df = behavior_df.merge(meta, on="animal", how="left", validate="many_to_one")
+    if behavior_df["group"].isna().any():
+        missing = sorted(behavior_df.loc[behavior_df["group"].isna(), "animal"].unique())
+        raise ValueError(f"Missing genotype/group metadata for animals: {missing}")
+
+    # Put columns in a sensible order
+    bout_cols = (
+        ["pre_cs"]
+        + [f"cs_{i}" for i in range(1, 13)]
+        + [f"noncs_{i}" for i in range(1, 11)]
+        + ["post_cs12"]
+    )
+    existing_bout_cols = [c for c in bout_cols if c in behavior_df.columns]
+    ordered_cols = ["animal", "group", session_column_name] + existing_bout_cols
+    behavior_df = behavior_df[ordered_cols]
+
+    return behavior_df

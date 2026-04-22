@@ -19,8 +19,11 @@
 # Replace main.py content with this version, or adapt the run section
 
 import matplotlib
+import pandas as pd
 
 import params
+from behaviour_processing import build_freezing_behavior_profile_table
+from plotting import plot_group_freezing_ratio_curves_with_sem
 
 matplotlib.use("TkAgg")
 
@@ -71,14 +74,29 @@ if __name__ == "__main__":
         "freezing_offsets": "freezing_offsets",
     }
 
-    run_group_level_plots_for_event_types(
-        completed_pipeline=completed_pipeline,
-        event_types=event_types,
-        group_output_root=Path(base_path) / "group_outputs",
-        auc_window_start_s=0.0,
-        auc_window_end_s=5.0,
-        max_event_index=12,
-        session_name_for_auc="Recall",
+    # run_group_level_plots_for_event_types(
+    #     completed_pipeline=completed_pipeline,
+    #     event_types=event_types,
+    #     group_output_root=Path(base_path) / "group_outputs",
+    #     auc_window_start_s=0.0,
+    #     auc_window_end_s=5.0,
+    #     max_event_index=12,
+    #     session_name_for_auc="Recall",
+    # )
+
+    metadata_df = pd.read_excel(
+        Path(base_path) / "animals_metadata.ods",
+        engine="odf",
+    )[["animal_name", "group"]].rename(columns={"animal_name": "animal"})
+
+    freezing_profile_df = build_freezing_behavior_profile_table(
+        completed_sessions=completed_pipeline.results,
+        metadata_dataframe=metadata_df,
     )
 
+    recall_df = freezing_profile_df.loc[freezing_profile_df["session_name"] == "Recall"]
+    fig = plot_group_freezing_ratio_curves_with_sem(recall_df)
     plt.show()
+
+    print()
+    # plt.show()

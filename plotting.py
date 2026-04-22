@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 import matplotlib as mpl
 from matplotlib.cm import ScalarMappable
 
@@ -734,3 +734,130 @@ class PhotometryPlotter:
             print(f"SUCCESS: all figures saved to {self.output_directory}")
         else:
             print("SUCCESS: plotting completed (SAVE_FIGURES=False)")
+
+def plot_group_freezing_ratio_curves_with_sem(
+    freezing_profile_df: pd.DataFrame,
+    group_column: str = "group",
+    animal_column: str = "animal",
+    session_column: str = "session_name",
+    include_post_cs12: bool = True,
+    groups_order: Sequence[str] = ("wt", "het", "gcamp"),
+    figure_size: tuple[float, float] = (14.0, 5.0),
+) -> plt.Figure:
+    """
+    Plot freezing ratio "behavior curves" across session bouts using seaborn, with inter-animal SEM shading.
+
+    Parameters
+    ----------
+    freezing_profile_df : pandas.DataFrame
+        Wide dataframe with one row per animal-session and freezing ratios in bout columns.
+    group_column : str, default="group"
+        Column name containing genotype/group labels.
+    animal_column : str, default="animal"
+        Column name containing animal identifiers.
+    session_column : str, default="session_name"
+        Optional column name for session identifier. If present, curves will pool across sessions unless
+        you filter `freezing_profile_df` beforehand.
+    include_post_cs12 : bool, default=True
+        Whether to include the `post_cs12` bout in the plot.
+    groups_order : sequence of str, default=("wt", "het", "gcamp")
+        Group ordering on the plot legend.
+    figure_size : tuple of float, default=(14.0, 5.0)
+        Figure size in inches.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure.
+    """
+    required = {animal_column, group_column}
+    missing = required.difference(freezing_profile_df.columns)
+    if missing:
+        raise ValueError(f"freezing_profile_df missing required columns: {sorted(missing)}")
+
+    # Build the ordered bout list: pre-cs, then cs/noncs alternating, then optional post
+    bout_columns = ["pre_cs"]
+    for i in range(1, 12 + 1):
+        bout_columns.append(f"cs_{i}")
+        if i <= 10:
+            bout_columns.append(f"noncs_{i}")
+    if include_post_cs12 and "post_cs12" in freezing_profile_df.columns:
+        bout_columns.append("post_cs12")
+
+    bout_columns = [c for c in bout_columns if c in freezing_profile_df.columns]
+    if not bout_columns:
+        raise ValueError("No bout columns found in freezing_profile_df")
+
+    id_vars = [animal_column, group_column]
+    if session_column in freezing_profile_df.columns:
+        id_vars.append(session_column)
+
+    df_long = (
+        freezing_profile_df[id_vars + bout_columns]
+        .melt(id_vars=id_vars, var_name="bout", value_name="freezing_ratio")
+        .dropna(subset=["freezing_ratio"])
+        .copy()
+    )
+
+    df_long["freezing_ratio"] = pd.to_numeric(df_long["freezing_ratio"], errors="coerce")
+    df_long = df_long.dropna(subset=["freezing_ratio"])
+
+    # Enforce correct x-order for lineplot
+    df_long["bout"] = pd.Categorical(df_long["bout"], categories=bout_columns, ordered=True)
+
+    # Convert bout to numeric x positions so we can shade SEM easily + control ticks
+    df_long["bout_index"] = df_long["bout"].cat.codes.astype(int)
+
+    # Compute inter-animal mean/SEM per group & bout_index
+    summary = (
+        df_long
+        .groupby([group_column, "bout", "bout_index"], as_index=False)
+        .agg(
+            mean_freezing_ratio=("freezing_ratio", "mean"),
+            sd_freezing_ratio=("freezing_ratio", "std"),
+            n_animals=("freezing_ratio", "count"),
+        )
+    )
+    summary["sem_freezing_ratio"] = summary["sd_freezing_ratio"] / np.sqrt(summary["n_animals"])
+
+    # Plot
+    fig, ax = plt.subplots(1, 1, figsize=figure_size)
+
+    palette = ['k', 'b', 'g']
+    group_to_color = {g: palette[i] for i, g in enumerate(groups_order)}
+
+    for group_name in groups_order:
+        gdf = summary.loc[summary[group_column] == group_name].sort_values("bout_index")
+        if gdf.empty:
+            continue
+
+        ax.plot(
+            gdf["bout_index"].to_numpy(),
+            gdf["mean_freezing_ratio"].to_numpy(),
+            label=f"{group_name} (n={int(gdf['n_animals'].max())})",
+            color=group_to_color[group_name],
+            linewidth=2.2,
+        )
+        ax.fill_between(
+            gdf["bout_index"].to_numpy(),
+            (gdf["mean_freezing_ratio"] - gdf["sem_freezing_ratio"]).to_numpy(),
+            (gdf["mean_freezing_ratio"] + gdf["sem_freezing_ratio"]).to_numpy(),
+            color=group_to_color[group_name],
+            alpha=0.25,
+            linewidth=0,
+        )
+
+    ax.set_xlim(-0.5, len(bout_columns) - 0.5)
+    ax.set_ylim(0, 1.0)
+    ax.set_xlabel("Session bout")
+    ax.set_ylabel("Freezing ratio (time freezing / total time)")
+    ax.set_title("Freezing ratio profile across CS and non-CS bouts (mean ± SEM across animals)")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=False, ncol=min(3, len(groups_order)))
+
+    # Bout tick labels in requested order
+    ax.set_xticks(np.arange(len(bout_columns)))
+    ax.set_xticklabels(bout_columns, rotation=45, ha="right")
+
+    fig.tight_layout()
+    return fig
