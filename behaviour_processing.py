@@ -336,3 +336,162 @@ def build_freezing_behavior_profile_table(
     behavior_df = behavior_df[ordered_cols]
 
     return behavior_df
+
+def freezing_profile_wide_to_tidy(
+    freezing_profile_df: pd.DataFrame,
+    animal_col: str = "animal",
+    genotype_col: str = "group",
+    session_col: str = "session_name",
+    value_col_out: str = "freeze_pct",
+    segment_col_out: str = "segment",
+) -> pd.DataFrame:
+    """
+    Convert a wide freezing profile table into a tidy long table.
+
+    Parameters
+    ----------
+    freezing_profile_df : pandas.DataFrame
+        Wide table with one row per animal/session and columns like
+        pre_cs, cs_1..cs_12, noncs_1..noncs_10, post_cs12.
+    animal_col : str, default="animal"
+        Animal identifier column.
+    genotype_col : str, default="group"
+        Genotype/group column.
+    session_col : str, default="session_name"
+        Session identifier column (optional).
+    value_col_out : str, default="freeze_pct"
+        Output column for freezing ratio.
+    segment_col_out : str, default="segment"
+        Output column for segment label.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Tidy dataframe with columns:
+        - animal
+        - genotype
+        - session (if present)
+        - segment
+        - freeze_pct
+    """
+    required = {animal_col, genotype_col}
+    missing = required.difference(freezing_profile_df.columns)
+    if missing:
+        raise ValueError(f"freezing_profile_df missing required columns: {sorted(missing)}")
+
+    id_vars = [animal_col, genotype_col]
+    if session_col in freezing_profile_df.columns:
+        id_vars.append(session_col)
+
+    value_vars = [c for c in freezing_profile_df.columns if c not in id_vars]
+
+    df_tidy = (
+        freezing_profile_df[id_vars + value_vars]
+        .melt(id_vars=id_vars, var_name=segment_col_out, value_name=value_col_out)
+        .dropna(subset=[value_col_out])
+        .copy()
+    )
+
+    df_tidy = df_tidy.rename(
+        columns={
+            animal_col: "animal",
+            genotype_col: "genotype",
+            session_col: "session",
+        }
+    )
+    df_tidy[value_col_out] = pd.to_numeric(df_tidy[value_col_out], errors="coerce")
+    df_tidy = df_tidy.dropna(subset=[value_col_out])
+
+    return df_tidy
+
+
+
+def compute_extinction_index(
+    df_freeze: pd.DataFrame,
+    group_by: tuple[str, ...] = ("animal", "genotype"),
+    require_min_cs: int = 10,
+    n_first: int = 3,
+    n_last: int = 3,
+    cs_regex: str = r"^cs_(\d+)$",
+    segment_col: str = "segment",
+    freeze_col: str = "freeze_pct",
+) -> pd.DataFrame:
+    """
+    Compute extinction index (EI) from freezing ratios in CS segments.
+
+    EI per group is:
+        EI = (sum_first - sum_last) / (sum_first + sum_last)
+
+    where sum_first is the sum of freezing ratios for the first n_first CS,
+    and sum_last is the sum for the last n_last CS.
+
+    Parameters
+    ----------
+    df_freeze : pandas.DataFrame
+        Tidy dataframe with columns including group_by, `segment_col`, and `freeze_col`.
+    group_by : tuple of str, default=("animal","genotype")
+        Grouping columns (animal-level EI by default).
+    require_min_cs : int, default=10
+        Minimum number of CS segments needed to compute EI (else NaN).
+    n_first : int, default=3
+        Number of earliest CS used.
+    n_last : int, default=3
+        Number of latest CS used.
+    cs_regex : str, default="^cs_(\\d+)$"
+        Regex to match CS segments and extract numeric index.
+    segment_col : str, default="segment"
+        Segment column name.
+    freeze_col : str, default="freeze_pct"
+        Freezing ratio column name.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Dataframe with columns:
+        - group_by...
+        - ext_index
+        - sum_first
+        - sum_last
+        - n_cs
+    """
+    required_cols = set(group_by) | {segment_col, freeze_col}
+    missing = required_cols.difference(df_freeze.columns)
+    if missing:
+        raise ValueError(f"df_freeze missing required columns: {sorted(missing)}")
+
+    min_needed = max(require_min_cs, n_first + n_last)
+
+    cs = df_freeze[df_freeze[segment_col].astype(str).str.match(cs_regex, na=False)].copy()
+    if cs.empty:
+        return pd.DataFrame(columns=[*group_by, "ext_index", "sum_first", "sum_last", "n_cs"])
+
+    cs["cs_num"] = cs[segment_col].astype(str).str.extract(cs_regex)[0].astype(float)
+    cs = cs.dropna(subset=["cs_num", freeze_col])
+    cs["cs_num"] = cs["cs_num"].astype(int)
+
+    results: list[dict] = []
+    group_cols = list(group_by)
+
+    for gvals, sub in cs.groupby(group_cols, dropna=False, observed=False):
+        sub = sub.sort_values("cs_num")
+        unique_cs = sub["cs_num"].unique()
+        n_cs = len(unique_cs)
+
+        payload = dict(zip(group_cols, gvals if isinstance(gvals, tuple) else (gvals,)))
+
+        if n_cs < min_needed:
+            results.append({**payload, "ext_index": np.nan, "sum_first": np.nan, "sum_last": np.nan, "n_cs": n_cs})
+            continue
+
+        first_ids = unique_cs[:n_first]
+        last_ids = unique_cs[-n_last:]
+
+        sum_first = float(sub.loc[sub["cs_num"].isin(first_ids), freeze_col].sum())
+        sum_last = float(sub.loc[sub["cs_num"].isin(last_ids), freeze_col].sum())
+
+        denom = sum_first + sum_last
+        ext_idx = (sum_first - sum_last) / denom if denom > 0 else np.nan
+
+        results.append({**payload, "ext_index": ext_idx, "sum_first": sum_first, "sum_last": sum_last, "n_cs": n_cs})
+
+    return pd.DataFrame(results)

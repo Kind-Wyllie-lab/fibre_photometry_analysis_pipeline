@@ -22,8 +22,9 @@ import matplotlib
 import pandas as pd
 
 import params
-from behaviour_processing import build_freezing_behavior_profile_table
-from plotting import plot_group_freezing_ratio_curves_with_sem
+from behaviour_processing import build_freezing_behavior_profile_table, freezing_profile_wide_to_tidy, \
+    compute_extinction_index
+from plotting import plot_freezing_ratio_profiles, plot_extinction_index
 
 matplotlib.use("TkAgg")
 
@@ -95,8 +96,50 @@ if __name__ == "__main__":
     )
 
     recall_df = freezing_profile_df.loc[freezing_profile_df["session_name"] == "Recall"]
-    fig = plot_group_freezing_ratio_curves_with_sem(recall_df)
-    plt.show()
 
+    fig = plot_freezing_ratio_profiles(
+        freezing_profile_df=freezing_profile_df,
+        mode="group_mean_sem",
+        session_name="Recall",  # optional if column exists
+    )
+
+    fig2 = plot_freezing_ratio_profiles(
+        freezing_profile_df=freezing_profile_df,
+        mode="individual_animals",
+        session_name="Recall",  # optional
+        colormap_animals="tab20",
+        legend_max_items=40,
+    )
+    plt.show()
+    # 1) convert wide -> tidy
+    df_freeze_tidy = freezing_profile_wide_to_tidy(
+        freezing_profile_df=freezing_profile_df,
+        animal_col="animal",
+        genotype_col="group",
+        session_col="session_name",  # omit or keep if present
+        value_col_out="freeze_pct",
+        segment_col_out="segment",
+    )
+
+    # 2) compute EI per animal (and genotype) using cs_1..cs_12
+    ext_df = compute_extinction_index(
+        df_freeze=df_freeze_tidy,
+        group_by=("animal", "genotype"),
+        require_min_cs=10,
+        n_first=3,
+        n_last=3,
+        cs_regex=r"^cs_(\d+)$",
+    )
+
+    ext_df = ext_df.replace('gcamp', 'wt')
+    # 3) plot EI
+    ax = plot_extinction_index(
+        ext_df=ext_df,
+        genotype_col="genotype",
+        value_col="ext_index",
+        palette={"wt": "k", "het": "b", "gcamp": "g"},
+        errorbar="se",
+    )
+    plt.show()
     print()
     # plt.show()

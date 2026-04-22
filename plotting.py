@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Literal
 import matplotlib as mpl
 from matplotlib.cm import ScalarMappable
 
@@ -734,36 +734,48 @@ class PhotometryPlotter:
             print(f"SUCCESS: all figures saved to {self.output_directory}")
         else:
             print("SUCCESS: plotting completed (SAVE_FIGURES=False)")
-
-def plot_group_freezing_ratio_curves_with_sem(
+def plot_freezing_ratio_profiles(
     freezing_profile_df: pd.DataFrame,
+    mode: Literal["group_mean_sem", "individual_animals"] = "group_mean_sem",
     group_column: str = "group",
     animal_column: str = "animal",
     session_column: str = "session_name",
+    session_name: Optional[str] = None,
     include_post_cs12: bool = True,
     groups_order: Sequence[str] = ("wt", "het", "gcamp"),
     figure_size: tuple[float, float] = (14.0, 5.0),
+    colormap_animals: str = "tab20",
+    legend_max_items: int = 30,
 ) -> plt.Figure:
     """
-    Plot freezing ratio "behavior curves" across session bouts using seaborn, with inter-animal SEM shading.
+    Plot freezing ratio behavior profiles across bouts using seaborn.
 
     Parameters
     ----------
     freezing_profile_df : pandas.DataFrame
         Wide dataframe with one row per animal-session and freezing ratios in bout columns.
+    mode : {"group_mean_sem", "individual_animals"}, default="group_mean_sem"
+        Plotting mode:
+        - "group_mean_sem": group mean ± SEM (seaborn errorbar="se")
+        - "individual_animals": one curve per animal (hue=animal)
     group_column : str, default="group"
-        Column name containing genotype/group labels.
+        Group/genotype column name.
     animal_column : str, default="animal"
-        Column name containing animal identifiers.
+        Animal identifier column name.
     session_column : str, default="session_name"
-        Optional column name for session identifier. If present, curves will pool across sessions unless
-        you filter `freezing_profile_df` beforehand.
+        Session identifier column name (optional).
+    session_name : str or None, default=None
+        If provided and `session_column` exists, filter to this session.
     include_post_cs12 : bool, default=True
-        Whether to include the `post_cs12` bout in the plot.
+        Whether to include post_cs12 bout.
     groups_order : sequence of str, default=("wt", "het", "gcamp")
-        Group ordering on the plot legend.
+        Ordering for group plots.
     figure_size : tuple of float, default=(14.0, 5.0)
-        Figure size in inches.
+        Figure size.
+    colormap_animals : str, default="tab20"
+        Matplotlib colormap name for individual animal curves.
+    legend_max_items : int, default=30
+        If too many animals are plotted, legend is truncated to at most this many items.
 
     Returns
     -------
@@ -775,89 +787,209 @@ def plot_group_freezing_ratio_curves_with_sem(
     if missing:
         raise ValueError(f"freezing_profile_df missing required columns: {sorted(missing)}")
 
-    # Build the ordered bout list: pre-cs, then cs/noncs alternating, then optional post
+    df = freezing_profile_df.copy()
+    if session_name is not None and session_column in df.columns:
+        df = df.loc[df[session_column] == session_name].copy()
+
+    # Build ordered bout columns: pre_cs, cs_1, noncs_1, cs_2, noncs_2, ...
     bout_columns = ["pre_cs"]
     for i in range(1, 12 + 1):
         bout_columns.append(f"cs_{i}")
         if i <= 10:
             bout_columns.append(f"noncs_{i}")
-    if include_post_cs12 and "post_cs12" in freezing_profile_df.columns:
+    if include_post_cs12 and "post_cs12" in df.columns:
         bout_columns.append("post_cs12")
-
-    bout_columns = [c for c in bout_columns if c in freezing_profile_df.columns]
+    bout_columns = [c for c in bout_columns if c in df.columns]
     if not bout_columns:
         raise ValueError("No bout columns found in freezing_profile_df")
 
     id_vars = [animal_column, group_column]
-    if session_column in freezing_profile_df.columns:
+    if session_column in df.columns:
         id_vars.append(session_column)
 
     df_long = (
-        freezing_profile_df[id_vars + bout_columns]
+        df[id_vars + bout_columns]
         .melt(id_vars=id_vars, var_name="bout", value_name="freezing_ratio")
         .dropna(subset=["freezing_ratio"])
         .copy()
     )
-
     df_long["freezing_ratio"] = pd.to_numeric(df_long["freezing_ratio"], errors="coerce")
     df_long = df_long.dropna(subset=["freezing_ratio"])
 
-    # Enforce correct x-order for lineplot
+    # Preserve x-order
     df_long["bout"] = pd.Categorical(df_long["bout"], categories=bout_columns, ordered=True)
 
-    # Convert bout to numeric x positions so we can shade SEM easily + control ticks
+    # Numeric x for lineplot ensures correct ordering & consistent ticks
     df_long["bout_index"] = df_long["bout"].cat.codes.astype(int)
 
-    # Compute inter-animal mean/SEM per group & bout_index
-    summary = (
-        df_long
-        .groupby([group_column, "bout", "bout_index"], as_index=False)
-        .agg(
-            mean_freezing_ratio=("freezing_ratio", "mean"),
-            sd_freezing_ratio=("freezing_ratio", "std"),
-            n_animals=("freezing_ratio", "count"),
+    # For individual animals: label legend with "animal (group)"
+    if mode == "individual_animals":
+        df_long["animal_with_group"] = (
+            df_long[animal_column].astype(str) + " (" + df_long[group_column].astype(str) + ")"
         )
-    )
-    summary["sem_freezing_ratio"] = summary["sd_freezing_ratio"] / np.sqrt(summary["n_animals"])
 
-    # Plot
     fig, ax = plt.subplots(1, 1, figsize=figure_size)
 
-    palette = ['k', 'b', 'g']
-    group_to_color = {g: palette[i] for i, g in enumerate(groups_order)}
-
-    for group_name in groups_order:
-        gdf = summary.loc[summary[group_column] == group_name].sort_values("bout_index")
-        if gdf.empty:
-            continue
-
-        ax.plot(
-            gdf["bout_index"].to_numpy(),
-            gdf["mean_freezing_ratio"].to_numpy(),
-            label=f"{group_name} (n={int(gdf['n_animals'].max())})",
-            color=group_to_color[group_name],
-            linewidth=2.2,
+    if mode == "group_mean_sem":
+        # seaborn does mean + SEM in one call
+        sns.lineplot(
+            data=df_long,
+            x="bout_index",
+            y="freezing_ratio",
+            hue=group_column,
+            hue_order=list(groups_order),
+            estimator="mean",
+            errorbar="se",
+            lw=2.2,
+            ax=ax,
         )
-        ax.fill_between(
-            gdf["bout_index"].to_numpy(),
-            (gdf["mean_freezing_ratio"] - gdf["sem_freezing_ratio"]).to_numpy(),
-            (gdf["mean_freezing_ratio"] + gdf["sem_freezing_ratio"]).to_numpy(),
-            color=group_to_color[group_name],
-            alpha=0.25,
-            linewidth=0,
-        )
+        title = "Freezing ratio profile (group mean ± SEM across animals)"
 
+    elif mode == "individual_animals":
+        animal_labels = sorted(df_long["animal_with_group"].unique().tolist())
+        n_animals = len(animal_labels)
+
+        cmap = plt.get_cmap(colormap_animals, max(n_animals, 2))
+        palette = {label: cmap(i) for i, label in enumerate(animal_labels)}
+
+        sns.lineplot(
+            data=df_long,
+            x="bout_index",
+            y="freezing_ratio",
+            hue="animal_with_group",
+            estimator=None,
+            units="animal_with_group",
+            lw=1.4,
+            alpha=0.6,
+            palette=palette,
+            ax=ax,
+        )
+        title = "Freezing ratio profile (individual animals)"
+
+        # Truncate legend if too large
+        handles, labels = ax.get_legend_handles_labels()
+        if len(labels) > legend_max_items + 1:  # +1 because seaborn includes title entry
+            ax.legend(
+                handles=handles[: legend_max_items + 1],
+                labels=labels[: legend_max_items + 1],
+                title="Animal (group)",
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                frameon=False,
+            )
+        else:
+            ax.legend(
+                title="Animal (group)",
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                frameon=False,
+            )
+
+    else:
+        raise ValueError("mode must be 'group_mean_sem' or 'individual_animals'")
+
+    # Axes cosmetics
     ax.set_xlim(-0.5, len(bout_columns) - 0.5)
     ax.set_ylim(0, 1.0)
     ax.set_xlabel("Session bout")
     ax.set_ylabel("Freezing ratio (time freezing / total time)")
-    ax.set_title("Freezing ratio profile across CS and non-CS bouts (mean ± SEM across animals)")
+    ax.set_title(title + (f" | session={session_name}" if session_name is not None else ""))
     ax.grid(alpha=0.25)
-    ax.legend(frameon=False, ncol=min(3, len(groups_order)))
 
-    # Bout tick labels in requested order
     ax.set_xticks(np.arange(len(bout_columns)))
     ax.set_xticklabels(bout_columns, rotation=45, ha="right")
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
 
     fig.tight_layout()
     return fig
+
+
+def plot_extinction_index(
+    ext_df: pd.DataFrame,
+    genotype_col: str = "genotype",
+    value_col: str = "ext_index",
+    palette: Optional[dict] = None,
+    show_points: bool = True,
+    point_alpha: float = 0.8,
+    errorbar: str | tuple = "se",
+    ax: Optional[plt.Axes] = None,
+    title: str = "Extinction index by genotype",
+) -> plt.Axes | None:
+    """
+    Plot EI per genotype with individual animal dots and mean ± errorbar overlay.
+
+    Parameters
+    ----------
+    ext_df : pandas.DataFrame
+        Dataframe containing EI values with columns `genotype_col` and `value_col`.
+    genotype_col : str, default="genotype"
+        Genotype/group column.
+    value_col : str, default="ext_index"
+        EI value column.
+    palette : dict or None, default=None
+        Color mapping, e.g. {"wt": "k", "het": "b", "gcamp": "g"}.
+    show_points : bool, default=True
+        Show individual animals.
+    point_alpha : float, default=0.8
+        Alpha for dots.
+    errorbar : str or tuple, default="se"
+        Seaborn errorbar specification for pointplot.
+    ax : matplotlib.axes.Axes or None, default=None
+        Axis to draw into.
+    title : str, default="Extinction index by genotype"
+        Plot title.
+
+    Returns
+    -------
+    matplotlib.axes.Axes or None
+        Axis, or None if no data.
+    """
+    if ext_df is None or ext_df.empty:
+        print("No extinction index data to plot.")
+        return None
+
+    df_plot = ext_df.dropna(subset=[value_col]).copy()
+    if df_plot.empty:
+        print("All extinction index values are NaN.")
+        return None
+
+    groups = sorted(df_plot[genotype_col].astype(str).unique().tolist())
+    if palette is None:
+        palette = {"wt": "k", "het": "b", "gcamp": "g"}
+
+    if ax is None:
+        plt.figure(figsize=(6.5, 4.2))
+        ax = plt.gca()
+
+    if show_points:
+        sns.stripplot(
+            data=df_plot,
+            x=genotype_col,
+            y=value_col,
+            order=groups,
+            alpha=point_alpha,
+            palette=palette,
+            ax=ax,
+        )
+
+    sns.pointplot(
+        data=df_plot,
+        x=genotype_col,
+        y=value_col,
+        order=groups,
+        join=False,
+        markers="D",
+        linestyles="",
+        errorbar=errorbar,
+        palette=palette,
+        ax=ax,
+    )
+
+    ax.axhline(0.0, color="k", lw=1, alpha=0.35)
+    ax.set_ylabel("Extinction index")
+    ax.set_xlabel("Genotype")
+    ax.set_title(title)
+    ax.spines["right"].set_visible(False)
+    ax.spines["top"].set_visible(False)
+    return ax
