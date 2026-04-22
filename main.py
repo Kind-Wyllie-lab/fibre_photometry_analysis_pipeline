@@ -23,8 +23,8 @@ import pandas as pd
 
 import params
 from behaviour_processing import build_freezing_behavior_profile_table, freezing_profile_wide_to_tidy, \
-    compute_extinction_index
-from plotting import plot_freezing_ratio_profiles, plot_extinction_index_wt_vs_het
+    compute_extinction_index, compute_modulation_index
+from plotting import plot_freezing_ratio_profiles, plot_extinction_index_wt_vs_het, plot_modulation_index_wt_vs_het
 
 matplotlib.use("TkAgg")
 
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         colormap_animals="tab20",
         legend_max_items=40,
     )
-    plt.show()
+
     # 1) convert wide -> tidy
     df_freeze_tidy = freezing_profile_wide_to_tidy(
         freezing_profile_df=freezing_profile_df,
@@ -143,6 +143,29 @@ if __name__ == "__main__":
         alpha=0.05,
     )
 
+    # 2) compute MI (CS vs NONCS)
+    mi_df = compute_modulation_index(
+        df_freeze=df_freeze_tidy,
+        group_by=("animal", "genotype"),
+        require_min_cs=1,
+        require_min_noncs=1,
+        cs_regex=r"^cs_(\d+)$",
+        noncs_regex=r"^noncs_(\d+)$",
+    )
+    mi_df = mi_df.replace('gcamp', 'wt')
+
+    # 3) plot MI wt vs het + stats
+    ax = plot_modulation_index_wt_vs_het(
+        mi_df=mi_df,
+        genotype_col="genotype",
+        value_col="mod_index",
+        palette={"wt": "k", "het": "b"},
+        errorbar="se",
+        stats_enabled=True,
+        alpha=0.05,
+    )
     plt.show()
+
+
     print()
     # plt.show()

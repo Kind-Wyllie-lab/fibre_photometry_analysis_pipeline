@@ -495,3 +495,107 @@ def compute_extinction_index(
         results.append({**payload, "ext_index": ext_idx, "sum_first": sum_first, "sum_last": sum_last, "n_cs": n_cs})
 
     return pd.DataFrame(results)
+
+def compute_modulation_index(
+    df_freeze: pd.DataFrame,
+    group_by: tuple[str, ...] = ("animal", "genotype"),
+    require_min_cs: int = 1,
+    require_min_noncs: int = 1,
+    segment_col: str = "segment",
+    freeze_col: str = "freeze_pct",
+    cs_regex: str = r"^cs_(\d+)$",
+    noncs_regex: str = r"^noncs_(\d+)$",
+) -> pd.DataFrame:
+    """
+    Compute modulation index (MI) from per-segment freezing ratios.
+
+    MI per group is:
+        MI = (sum_cs - sum_noncs) / (sum_cs + sum_noncs)
+
+    Parameters
+    ----------
+    df_freeze : pandas.DataFrame
+        Tidy dataframe with columns including group_by, `segment_col`, and `freeze_col`.
+        `freeze_col` is expected to be a ratio (0..1) or percent (0..100); MI is scale-invariant.
+    group_by : tuple of str, default=("animal","genotype")
+        Grouping columns.
+    require_min_cs : int, default=1
+        Minimum number of CS segments required.
+    require_min_noncs : int, default=1
+        Minimum number of NONCS segments required.
+    segment_col : str, default="segment"
+        Segment label column.
+    freeze_col : str, default="freeze_pct"
+        Freezing ratio/percent column.
+    cs_regex : str, default="^cs_(\\d+)$"
+        Regex to identify CS segments.
+    noncs_regex : str, default="^noncs_(\\d+)$"
+        Regex to identify NONCS segments.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Dataframe with:
+        - group_by columns
+        - mod_index
+        - sum_cs
+        - sum_noncs
+        - n_cs
+        - n_noncs
+    """
+    required_cols = set(group_by) | {segment_col, freeze_col}
+    missing = required_cols.difference(df_freeze.columns)
+    if missing:
+        raise ValueError(f"df_freeze missing required columns: {sorted(missing)}")
+
+    df = df_freeze.copy()
+    df[segment_col] = df[segment_col].astype(str)
+    df[freeze_col] = pd.to_numeric(df[freeze_col], errors="coerce")
+
+    cs_df = df.loc[df[segment_col].str.match(cs_regex, na=False)].dropna(subset=[freeze_col]).copy()
+    non_df = df.loc[df[segment_col].str.match(noncs_regex, na=False)].dropna(subset=[freeze_col]).copy()
+
+    if cs_df.empty and non_df.empty:
+        return pd.DataFrame(columns=[*group_by, "mod_index", "sum_cs", "sum_noncs", "n_cs", "n_noncs"])
+
+    group_cols = list(group_by)
+
+    def _group_keys(d: pd.DataFrame) -> set[tuple]:
+        if d.empty:
+            return set()
+        return set(d[group_cols].itertuples(index=False, name=None))
+
+    keys = _group_keys(cs_df) | _group_keys(non_df)
+
+    rows: list[dict] = []
+    for gvals in keys:
+        gvals_tuple = gvals if isinstance(gvals, tuple) else (gvals,)
+        payload = dict(zip(group_cols, gvals_tuple))
+
+        mask_cs = np.ones(len(cs_df), dtype=bool)
+        mask_non = np.ones(len(non_df), dtype=bool)
+        for col, val in zip(group_cols, gvals_tuple):
+            if not cs_df.empty:
+                mask_cs &= (cs_df[col] == val)
+            if not non_df.empty:
+                mask_non &= (non_df[col] == val)
+
+        sub_cs = cs_df.loc[mask_cs] if not cs_df.empty else cs_df
+        sub_non = non_df.loc[mask_non] if not non_df.empty else non_df
+
+        n_cs = int(sub_cs.shape[0])
+        n_non = int(sub_non.shape[0])
+
+        if (n_cs < require_min_cs) or (n_non < require_min_noncs):
+            rows.append({**payload, "mod_index": np.nan, "sum_cs": np.nan, "sum_noncs": np.nan, "n_cs": n_cs, "n_noncs": n_non})
+            continue
+
+        sum_cs = float(sub_cs[freeze_col].sum())
+        sum_noncs = float(sub_non[freeze_col].sum())
+
+        denom = sum_cs + sum_noncs
+        mi = (sum_cs - sum_noncs) / denom if denom > 0 else np.nan
+
+        rows.append({**payload, "mod_index": mi, "sum_cs": sum_cs, "sum_noncs": sum_noncs, "n_cs": n_cs, "n_noncs": n_non})
+
+    return pd.DataFrame(rows)

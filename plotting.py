@@ -1023,3 +1023,94 @@ def plot_extinction_index_wt_vs_het(
         )
 
     return ax
+
+def plot_modulation_index_wt_vs_het(
+    mi_df: pd.DataFrame,
+    genotype_col: str = "genotype",
+    value_col: str = "mod_index",
+    palette: dict | None = None,
+    show_points: bool = True,
+    point_alpha: float = 0.8,
+    errorbar: str | tuple = "se",
+    stats_enabled: bool = True,
+    alpha: float = 0.05,
+    ax: plt.Axes | None = None,
+) -> plt.Axes | None:
+    """
+    Plot modulation index (MI) for wt vs het with mean±SE overlay and star-annotated stats.
+    """
+    if mi_df is None or mi_df.empty:
+        print("No modulation index data to plot.")
+        return None
+
+    df_plot = mi_df.dropna(subset=[value_col]).copy()
+    if df_plot.empty:
+        print("All modulation index values are NaN.")
+        return None
+
+    if palette is None:
+        palette = {"wt": "k", "het": "b"}
+
+    df_plot[genotype_col] = df_plot[genotype_col].astype(str)
+    df_plot = df_plot.loc[df_plot[genotype_col].isin(["wt", "het"])].copy()
+    if df_plot.empty:
+        print("No wt/het rows found.")
+        return None
+
+    order = ["wt", "het"]
+    present = set(df_plot[genotype_col].unique())
+    if present != {"wt", "het"}:
+        print(f"Expected both wt and het for stats; got {sorted(present)}. Plotting without stats.")
+        stats_enabled = False
+
+    if ax is None:
+        plt.figure(figsize=(6.5, 4.2))
+        ax = plt.gca()
+
+    if show_points:
+        sns.stripplot(
+            data=df_plot,
+            x=genotype_col,
+            y=value_col,
+            order=order,
+            dodge=False,
+            alpha=point_alpha,
+            palette=palette,
+            ax=ax,
+        )
+
+    sns.pointplot(
+        data=df_plot,
+        x=genotype_col,
+        y=value_col,
+        order=order,
+        dodge=0.2,
+        join=False,
+        markers="D",
+        linestyles="",
+        errorbar=errorbar,
+        palette=palette,
+        ax=ax,
+    )
+
+    ax.axhline(0.0, color="k", lw=1, alpha=0.35)
+    ax.set_ylabel("Modulation index")
+    ax.set_xlabel("Genotype")
+    ax.set_title("Modulation index (wt vs het)")
+    ax.spines["right"].set_visible(False)
+    ax.spines["top"].set_visible(False)
+
+    if stats_enabled:
+        x = df_plot.loc[df_plot[genotype_col] == "wt", value_col].to_numpy(dtype=float)
+        y = df_plot.loc[df_plot[genotype_col] == "het", value_col].to_numpy(dtype=float)
+
+        res = _two_group_independent_test(x, y, alpha=alpha)
+        stars = _p_to_stars(res["p"])
+        _annotate_two_group_stars(ax, x_positions=(0, 1), stars=stars)
+
+        print(
+            f"MI stats: {res['test']}; p={res['p']:.3g}; normal={res['normal']}; "
+            f"equal_var={res['equal_var']}; n={res['n1']} vs {res['n2']}"
+        )
+
+    return ax
