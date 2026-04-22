@@ -77,7 +77,7 @@ from params import (
     heatmap_ytick_major_step,
     heatmap_ytick_minor_step,
 )
-
+from stats import _two_group_independent_test, _p_to_stars, _annotate_two_group_stars
 
 
 @dataclass
@@ -904,46 +904,48 @@ def plot_freezing_ratio_profiles(
     fig.tight_layout()
     return fig
 
-
-def plot_extinction_index(
-    ext_df: pd.DataFrame,
+def plot_extinction_index_wt_vs_het(
+    ext_df,
     genotype_col: str = "genotype",
     value_col: str = "ext_index",
-    palette: Optional[dict] = None,
+    palette: dict | None = None,
     show_points: bool = True,
     point_alpha: float = 0.8,
     errorbar: str | tuple = "se",
-    ax: Optional[plt.Axes] = None,
-    title: str = "Extinction index by genotype",
+    stats_enabled: bool = True,
+    alpha: float = 0.05,
+    ax: plt.Axes | None = None,
 ) -> plt.Axes | None:
     """
-    Plot EI per genotype with individual animal dots and mean ± errorbar overlay.
+    Plot extinction index (EI) for wt vs het with mean±SE overlay and star-annotated stats.
 
     Parameters
     ----------
     ext_df : pandas.DataFrame
-        Dataframe containing EI values with columns `genotype_col` and `value_col`.
+        Dataframe with columns [genotype_col, value_col].
     genotype_col : str, default="genotype"
-        Genotype/group column.
+        Genotype column name (values expected: 'wt' and 'het').
     value_col : str, default="ext_index"
-        EI value column.
+        EI column name.
     palette : dict or None, default=None
-        Color mapping, e.g. {"wt": "k", "het": "b", "gcamp": "g"}.
+        Color mapping for groups, default {'wt':'k','het':'b'}.
     show_points : bool, default=True
-        Show individual animals.
+        Show individual animal dots.
     point_alpha : float, default=0.8
         Alpha for dots.
     errorbar : str or tuple, default="se"
         Seaborn errorbar specification for pointplot.
+    stats_enabled : bool, default=True
+        Run `_two_group_independent_test` and annotate stars.
+    alpha : float, default=0.05
+        Significance level for normality/variance checks.
     ax : matplotlib.axes.Axes or None, default=None
         Axis to draw into.
-    title : str, default="Extinction index by genotype"
-        Plot title.
 
     Returns
     -------
     matplotlib.axes.Axes or None
-        Axis, or None if no data.
+        Axis with plot, or None if no data.
     """
     if ext_df is None or ext_df.empty:
         print("No extinction index data to plot.")
@@ -954,9 +956,21 @@ def plot_extinction_index(
         print("All extinction index values are NaN.")
         return None
 
-    groups = sorted(df_plot[genotype_col].astype(str).unique().tolist())
     if palette is None:
-        palette = {"wt": "k", "het": "b", "gcamp": "g"}
+        palette = {"wt": "k", "het": "b"}
+
+    # Enforce wt/het only and fixed order
+    df_plot[genotype_col] = df_plot[genotype_col].astype(str)
+    df_plot = df_plot.loc[df_plot[genotype_col].isin(["wt", "het"])].copy()
+    if df_plot.empty:
+        print("No wt/het rows found.")
+        return None
+
+    order = ["wt", "het"]
+    present = set(df_plot[genotype_col].unique())
+    if present != {"wt", "het"}:
+        print(f"Expected both wt and het for stats; got {sorted(present)}. Plotting without stats.")
+        stats_enabled = False
 
     if ax is None:
         plt.figure(figsize=(6.5, 4.2))
@@ -967,7 +981,8 @@ def plot_extinction_index(
             data=df_plot,
             x=genotype_col,
             y=value_col,
-            order=groups,
+            order=order,
+            dodge=False,
             alpha=point_alpha,
             palette=palette,
             ax=ax,
@@ -977,7 +992,8 @@ def plot_extinction_index(
         data=df_plot,
         x=genotype_col,
         y=value_col,
-        order=groups,
+        order=order,
+        dodge=0.2,
         join=False,
         markers="D",
         linestyles="",
@@ -989,7 +1005,21 @@ def plot_extinction_index(
     ax.axhline(0.0, color="k", lw=1, alpha=0.35)
     ax.set_ylabel("Extinction index")
     ax.set_xlabel("Genotype")
-    ax.set_title(title)
+    ax.set_title("Extinction index (wt vs het)")
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
+
+    if stats_enabled:
+        x = df_plot.loc[df_plot[genotype_col] == "wt", value_col].to_numpy(dtype=float)
+        y = df_plot.loc[df_plot[genotype_col] == "het", value_col].to_numpy(dtype=float)
+
+        res = _two_group_independent_test(x, y, alpha=alpha)
+        stars = _p_to_stars(res["p"])
+        _annotate_two_group_stars(ax, x_positions=(0, 1), stars=stars)
+
+        print(
+            f"EI stats: {res['test']}; p={res['p']:.3g}; normal={res['normal']}; "
+            f"equal_var={res['equal_var']}; n={res['n1']} vs {res['n2']}"
+        )
+
     return ax

@@ -24,7 +24,7 @@ import pandas as pd
 import params
 from behaviour_processing import build_freezing_behavior_profile_table, freezing_profile_wide_to_tidy, \
     compute_extinction_index
-from plotting import plot_freezing_ratio_profiles, plot_extinction_index
+from plotting import plot_freezing_ratio_profiles, plot_extinction_index_wt_vs_het
 
 matplotlib.use("TkAgg")
 
@@ -133,13 +133,16 @@ if __name__ == "__main__":
 
     ext_df = ext_df.replace('gcamp', 'wt')
     # 3) plot EI
-    ax = plot_extinction_index(
-        ext_df=ext_df,
-        genotype_col="genotype",
+    ax = plot_extinction_index_wt_vs_het(
+        ext_df=ext_df,  # output of compute_extinction_index(...)
+        genotype_col="genotype",  # or "group" depending on your ext_df
         value_col="ext_index",
-        palette={"wt": "k", "het": "b", "gcamp": "g"},
+        palette={"wt": "k", "het": "b"},
         errorbar="se",
+        stats_enabled=True,
+        alpha=0.05,
     )
+
     plt.show()
     print()
     # plt.show()
