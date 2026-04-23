@@ -29,7 +29,7 @@ import pandas as pd
 import params
 from epoching import EventEpochExtractor
 from params import animal_output_dirs
-from session import PhotometrySession
+from session import PhotometrySession, session_has_raw_data
 from group_analysis import (
     build_session_peri_event_long_dataframe,
     PhotometryGroupAnalyzer,
@@ -215,7 +215,14 @@ class PhotometryPipeline:
             print(animal)
             for session_name in self.session_names:
                 print(session_name)
+
+                # Check existence BEFORE build_session() (prevents output dir creation crash)
+                if not session_has_raw_data(self.base_directory, animal, session_name):
+                    print(f"[PIPELINE] Skipping {animal} | {session_name} (no folder/raw data)")
+                    continue
+
                 session_processor = self.build_session(animal, session_name)
                 session_processor.run()
                 self.results.append(session_processor)
+
         return self.results

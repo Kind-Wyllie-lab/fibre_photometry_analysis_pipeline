@@ -75,15 +75,15 @@ if __name__ == "__main__":
         "freezing_offsets": "freezing_offsets",
     }
 
-    # run_group_level_plots_for_event_types(
-    #     completed_pipeline=completed_pipeline,
-    #     event_types=event_types,
-    #     group_output_root=Path(base_path) / "group_outputs",
-    #     auc_window_start_s=0.0,
-    #     auc_window_end_s=5.0,
-    #     max_event_index=12,
-    #     session_name_for_auc="Recall",
-    # )
+    run_group_level_plots_for_event_types(
+        completed_pipeline=completed_pipeline,
+        event_types=event_types,
+        group_output_root=Path(base_path) / "group_outputs",
+        auc_window_start_s=0.0,
+        auc_window_end_s=5.0,
+        max_event_index=12,
+        session_name_for_auc="Recall",
+    )
 
     metadata_df = pd.read_excel(
         Path(base_path) / "animals_metadata.ods",

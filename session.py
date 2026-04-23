@@ -124,35 +124,17 @@ class PhotometrySession:
         """
         Initialize derived directory attributes and session-specific behavior.
 
-        Raises
-        ------
-        FileNotFoundError
-            If the animal or session directory does not exist.
-        ValueError
-            If the session raw data directory cannot be identified.
+        Notes
+        -----
+        This method no longer raises if the session is missing. Instead it allows
+        the pipeline to skip animals that do not have a given session.
         """
+        # Defer strict validation to `run()` so the pipeline can skip missing sessions
         self.base_directory = Path(self.base_directory)
         self.output_directory = Path(self.output_directory)
 
         self.animal_path = self.base_directory / self.animal
         self.session_path = self.animal_path / self.session_name
-
-        if not self.animal_path.exists():
-            raise FileNotFoundError(f"Animal directory not found: {self.animal_path}")
-        if not self.session_path.exists():
-            raise FileNotFoundError(f"Session directory not found: {self.session_path}")
-
-        candidate_raw_dirs = sorted(
-            [p for p in self.session_path.iterdir() if p.is_dir() and p.name.startswith(self.animal)]
-        )
-        if not candidate_raw_dirs:
-            raise ValueError(
-                f"No raw data directory starting with '{self.animal}' found in {self.session_path}"
-            )
-        self.raw_data_path = candidate_raw_dirs[0]
-
-        self.output_directory.mkdir(parents=True, exist_ok=True)
-        self.skip_first_event = self._infer_skip_first_event()
 
     def _infer_skip_first_event(self) -> bool:
         """
@@ -188,7 +170,7 @@ class PhotometrySession:
         time_s = self.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
 
         # Select event times from the requested event table
-        self.event_times_s = self.event_tables['freezing_events']['freezing_onsets']
+        self.event_times_s = self.event_tables['LED_events']['cs_onsets']
 
         n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
         n_post = int(params.time_post_event_s * params.sample_rate_hz)
@@ -221,6 +203,61 @@ class PhotometrySession:
         )
         plotter.run_all()
 
+    def session_exists(self) -> bool:
+        """
+        Check whether this animal has this session folder and a valid raw data directory.
+
+        Returns
+        -------
+        bool
+            True if session folder and raw acquisition directory exist, otherwise False.
+        """
+        animal_path = Path(self.base_directory) / self.animal
+        session_path = animal_path / self.session_name
+        if not animal_path.exists() or not session_path.exists():
+            return False
+
+        candidate_raw_dirs = [
+            p for p in session_path.iterdir()
+            if p.is_dir() and p.name.startswith(self.animal)
+        ]
+        return len(candidate_raw_dirs) > 0
+
+    def _try_resolve_paths_or_skip(self) -> bool:
+        """
+        Resolve session paths if possible; otherwise mark as skipped.
+
+        Returns
+        -------
+        bool
+            True if paths resolved and processing can proceed, False if session should be skipped.
+        """
+        self.base_directory = Path(self.base_directory)
+        self.output_directory = Path(self.output_directory)
+
+        self.animal_path = self.base_directory / self.animal
+        self.session_path = self.animal_path / self.session_name
+
+        if not self.animal_path.exists():
+            print(f"[SKIP] Missing animal folder: {self.animal_path}")
+            return False
+
+        if not self.session_path.exists():
+            print(f"[SKIP] Missing session folder: {self.session_path}")
+            return False
+
+        candidate_raw_dirs = sorted(
+            [p for p in self.session_path.iterdir() if p.is_dir() and p.name.startswith(self.animal)]
+        )
+        if not candidate_raw_dirs:
+            print(f"[SKIP] No raw acquisition dir found in: {self.session_path}")
+            return False
+
+        self.raw_data_path = candidate_raw_dirs[0]
+        self.output_directory.mkdir(parents=True, exist_ok=True)
+        self.skip_first_event = self._infer_skip_first_event()
+        return True
+
     def run(self) -> "PhotometrySession":
         """
         Run the enabled processing stages for the current session.
@@ -230,6 +267,10 @@ class PhotometrySession:
         PhotometrySession
             The current session instance after execution.
         """
+        can_run = self._try_resolve_paths_or_skip()
+        if not can_run:
+            return self
+
         self.df_clean = extract_session_raw_data(str(self.raw_data_path), self.output_directory)
 
         self.event_tables = process_ttl_events(self.df_clean, self.output_directory)
@@ -252,3 +293,27 @@ class PhotometrySession:
         # self.run_plotting_stage()
         return self
 
+def session_has_raw_data(base_directory: str | Path, animal: str, session_name: str) -> bool:
+    """
+    Check whether an animal has a session folder containing a raw acquisition directory.
+
+    Parameters
+    ----------
+    base_directory : str or Path
+        Root directory containing animal folders.
+    animal : str
+        Animal identifier.
+    session_name : str
+        Session identifier.
+
+    Returns
+    -------
+    bool
+        True if session exists and contains a raw dir starting with the animal name.
+    """
+    base_directory = Path(base_directory)
+    session_path = base_directory / animal / session_name
+    if not session_path.exists():
+        return False
+    raw_dirs = [p for p in session_path.iterdir() if p.is_dir() and p.name.startswith(animal)]
+    return len(raw_dirs) > 0
