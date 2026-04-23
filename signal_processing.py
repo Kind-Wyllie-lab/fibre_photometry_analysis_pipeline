@@ -18,7 +18,7 @@
 
 # signal_processing.py
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Literal
 
 from scipy.signal import savgol_filter
 from scipy.stats import linregress
@@ -548,126 +548,195 @@ def extract_epoch(signal: np.ndarray, time: np.ndarray,
         return None
     return signal[start:end]
 
+PeriEventSignalKind = Literal["dff", "zscore"]
+BaselineStatistic = Literal["mean", "median"]
+
 def extract_epoched_data(
     signal: np.ndarray,
     time_s: np.ndarray,
     event_times_s: np.ndarray,
     n_pre: int,
     n_post: int,
-    compute_trial_baseline_dff: bool = False,
-    trial_baseline_window_s: float = 5.0,
-    trial_baseline_statistic: str = "mean",
-    minimum_baseline_value: Optional[float] = None,
+    signal_kind: PeriEventSignalKind = "dff",
+    dff_signal_for_zscore: Optional[np.ndarray] = None,
+    peri_event_baseline_window_s: float = 2.0,
+    dff_baseline_statistic: BaselineStatistic = "median",
+    zscore_baseline_center: BaselineStatistic = "mean",
+    minimum_baseline_std: float = 1e-12,
 ) -> np.ndarray:
     """
-    Extract peri-event epochs and optionally normalize each epoch to its own
-    pre-trigger baseline to obtain trial-local ΔF/F.
+    Extract peri-event epochs with peri-event baselining consistent with the
+    peri-event heatmap manual.
+
+    This function supports two modes:
+
+    - signal_kind="dff":
+      Returns peri-event ΔF/F epochs baseline-referenced to the peri-event baseline
+      interval (typically the last `peri_event_baseline_window_s` seconds pre-trigger).
+
+      Because the input is already ΔF/F, the peri-event baselineing is implemented as
+      an additive baseline reference:
+          dff_epoch_baselined = dff_epoch - median(dff_epoch_baseline_window)
+
+    - signal_kind="zscore":
+      Returns peri-event z-score epochs computed from peri-event ΔF/F:
+          z = (x - mean_baseline) / std_baseline
+      where x is the peri-event ΔF/F (after peri-event baseline reference) and the
+      mean/std are computed inside the peri-event baseline window.
+
+      In this mode, you must provide `dff_signal_for_zscore`, because z-score must be
+      derived from ΔF/F per the manual.
 
     Parameters
     ----------
     signal : numpy.ndarray
-        One-dimensional signal array from which epochs are extracted.
+        Full-session trace. If `signal_kind="dff"`, this is the ΔF/F trace.
+        If `signal_kind="zscore"`, this argument is ignored except for epoch indexing
+        consistency (recommended: pass the z-score full trace).
     time_s : numpy.ndarray
-        One-dimensional time vector in seconds aligned to `signal`.
+        Full-session time vector in seconds.
     event_times_s : numpy.ndarray
-        Event timestamps in seconds used as epoch centers.
-    n_pre : int
-        Number of samples to include before each event.
-    n_post : int
-        Number of samples to include after each event.
-    compute_trial_baseline_dff : bool, default=False
-        If ``True``, compute trial-local ΔF/F for each extracted epoch using
-        its own pre-trigger baseline window.
-    trial_baseline_window_s : float, default=2.0
-        Duration in seconds of the pre-trigger baseline window used for
-        trial-local ΔF/F normalization.
-    trial_baseline_statistic : {"mean", "median"}, default="median"
-        Summary statistic used to estimate the baseline fluorescence per trial.
-    minimum_baseline_value : float or None, default=None
-        Optional lower bound for acceptable baseline values. If provided,
-        epochs with baseline values less than or equal to this threshold are
-        rejected.
+        Event timestamps in seconds.
+    n_pre, n_post : int
+        Samples before/after event.
+    signal_kind : {"dff", "zscore"}, default="dff"
+        Selects which peri-event output to compute.
+    dff_signal_for_zscore : numpy.ndarray or None, default=None
+        Required if `signal_kind="zscore"`. Full-session ΔF/F trace used to compute
+        peri-event z-score as described in the manual.
+    peri_event_baseline_window_s : float, default=2.0
+        Duration of baseline window immediately preceding event onset used for
+        peri-event baselineing and/or z-score baseline mean/std.
+    dff_baseline_statistic : {"mean","median"}, default="median"
+        Statistic used to compute the peri-event baseline reference for ΔF/F.
+        Manual describes median(Baseline) for ΔF/F.
+    zscore_baseline_center : {"mean","median"}, default="mean"
+        Center statistic used for z-score baseline. Manual uses mean.
+    minimum_baseline_std : float, default=1e-12
+        Reject epochs with baseline std <= this threshold when computing z-score.
 
     Returns
     -------
     numpy.ndarray
-        Array of shape ``(n_trials, n_timepoints)`` containing extracted epochs.
-        If `compute_trial_baseline_dff` is ``True``, the returned values are
-        trial-local ΔF/F.
+        Epoched output array:
+        - If `signal_kind="dff"`: peri-event baselined ΔF/F epochs
+        - If `signal_kind="zscore"`: peri-event z-score epochs (computed from ΔF/F)
 
     Raises
     ------
     ValueError
-        If no valid epochs are extracted, if the baseline window is invalid,
-        or if the baseline statistic is unsupported.
+        If baseline window is invalid, or if z-score is requested without ΔF/F trace,
+        or if no valid epochs are extracted.
 
     Notes
     -----
-    When `compute_trial_baseline_dff` is enabled, the baseline is computed from
-    the interval immediately preceding the trigger, corresponding to the last
-    `trial_baseline_window_s` seconds of the pre-event segment.
+    - Full manual ΔF/F formula variants (control=410 vs baseline, with/without baseline correction)
+      require access to raw fluorescence and fitted controls. If you only have ΔF/F already,
+      this function can only apply the manual's *peri-event baseline interval* logic.
+    - The z-score implementation matches the manual: it is computed from ΔF/F within the
+      peri-event baseline window.
     """
-    epochs = []
+    if len(time_s) < 2:
+        raise ValueError("time_s must contain at least 2 samples to infer sampling interval")
+
+    dt_s = float(np.median(np.diff(time_s)))
+    if not np.isfinite(dt_s) or dt_s <= 0:
+        raise ValueError("Invalid sampling interval inferred from time_s")
+
+    baseline_samples = int(round(peri_event_baseline_window_s / dt_s))
+    if baseline_samples <= 0:
+        raise ValueError(f"peri_event_baseline_window_s={peri_event_baseline_window_s} yields 0 baseline samples")
+    if baseline_samples > n_pre:
+        raise ValueError(
+            f"peri_event_baseline_window_s={peri_event_baseline_window_s}s needs {baseline_samples} samples, "
+            f"but n_pre={n_pre} samples are available"
+        )
+
+    if signal_kind == "zscore":
+        if dff_signal_for_zscore is None:
+            raise ValueError(
+                "signal_kind='zscore' requires dff_signal_for_zscore (z-score must be computed from ΔF/F per manual)"
+            )
+        if len(dff_signal_for_zscore) != len(time_s):
+            raise ValueError("dff_signal_for_zscore must have same length as time_s")
+
+    epochs_out = []
+
     for t_ev in event_times_s:
-        epoch = extract_epoch(signal, time_s, t_ev, n_pre, n_post)
-        if epoch is None:
-            continue
+        if signal_kind == "dff":
+            epoch = extract_epoch(signal, time_s, t_ev, n_pre, n_post)
+            if epoch is None:
+                continue
 
-        if compute_trial_baseline_dff:
-            if n_pre <= 0:
-                raise ValueError("n_pre must be > 0 to compute trial-local baseline ΔF/F")
+            baseline_segment = epoch[n_pre - baseline_samples : n_pre]
 
-            if len(time_s) < 2:
-                raise ValueError("time_s must contain at least 2 samples to infer sampling interval")
-
-            sampling_interval_s = float(np.median(np.diff(time_s)))
-            if sampling_interval_s <= 0:
-                raise ValueError("Invalid non-positive sampling interval inferred from time_s")
-
-            baseline_samples = int(round(trial_baseline_window_s / sampling_interval_s))
-            if baseline_samples <= 0:
-                raise ValueError(
-                    f"trial_baseline_window_s={trial_baseline_window_s} yields zero baseline samples"
-                )
-            if baseline_samples > n_pre:
-                raise ValueError(
-                    f"trial_baseline_window_s={trial_baseline_window_s}s requires {baseline_samples} samples, "
-                    f"but only {n_pre} pre-event samples are available"
-                )
-
-            baseline_segment = epoch[n_pre - baseline_samples:n_pre]
-
-            if trial_baseline_statistic == "mean":
+            if dff_baseline_statistic == "mean":
                 baseline_value = float(np.mean(baseline_segment))
-            elif trial_baseline_statistic == "median":
+            elif dff_baseline_statistic == "median":
                 baseline_value = float(np.median(baseline_segment))
             else:
-                raise ValueError(
-                    "trial_baseline_statistic must be either 'mean' or 'median'"
-                )
+                raise ValueError("dff_baseline_statistic must be 'mean' or 'median'")
 
             if not np.isfinite(baseline_value):
                 continue
-            if baseline_value == 0:
-                continue
-            if minimum_baseline_value is not None and baseline_value <= minimum_baseline_value:
-                continue
 
-            epoch = (epoch - baseline_value) / baseline_value
+            # peri-event baseline reference for ΔF/F (manual's heatmap baseline interval)
+            epoch_out = epoch - baseline_value
+            epochs_out.append(epoch_out)
+            continue
 
-        epochs.append(epoch)
+        # signal_kind == "zscore": derive from ΔF/F epoch
+        dff_epoch = extract_epoch(dff_signal_for_zscore, time_s, t_ev, n_pre, n_post)
+        if dff_epoch is None:
+            continue
 
-    if not epochs:
-        raise ValueError("No valid epochs extracted — check event times vs signal duration")
+        dff_baseline_segment = dff_epoch[n_pre - baseline_samples : n_pre]
 
-    result = np.asarray(epochs, dtype=float)
+        if dff_baseline_statistic == "mean":
+            dff_baseline_value = float(np.mean(dff_baseline_segment))
+        elif dff_baseline_statistic == "median":
+            dff_baseline_value = float(np.median(dff_baseline_segment))
+        else:
+            raise ValueError("dff_baseline_statistic must be 'mean' or 'median'")
+
+        if not np.isfinite(dff_baseline_value):
+            continue
+
+        dff_epoch_baselined = dff_epoch - dff_baseline_value
+        baseline_dff_for_z = dff_epoch_baselined[n_pre - baseline_samples : n_pre]
+
+        if zscore_baseline_center == "mean":
+            mu = float(np.mean(baseline_dff_for_z))
+        elif zscore_baseline_center == "median":
+            mu = float(np.median(baseline_dff_for_z))
+        else:
+            raise ValueError("zscore_baseline_center must be 'mean' or 'median'")
+
+        sigma = float(np.std(baseline_dff_for_z))
+        if (not np.isfinite(mu)) or (not np.isfinite(sigma)) or (sigma <= minimum_baseline_std):
+            continue
+
+        z_epoch = (dff_epoch_baselined - mu) / sigma
+        epochs_out.append(z_epoch)
+
+    if not epochs_out:
+        raise ValueError("No valid epochs extracted — check event times vs signal duration / baseline window")
+
+    result = np.asarray(epochs_out, dtype=float)
     print(f"Epochs extracted: {result.shape[0]} trials, {result.shape[1]} samples each")
 
-    if compute_trial_baseline_dff:
+    if signal_kind == "dff":
         print(
-            "Applied trial-local ΔF/F normalization "
-            f"using {trial_baseline_window_s:.3f}s pre-trigger baseline "
-            f"({trial_baseline_statistic})"
+            "Peri-event ΔF/F baselining: "
+            f"dff_epoch - {dff_baseline_statistic}(baseline_window), "
+            f"baseline_window={peri_event_baseline_window_s:.3f}s"
+        )
+    else:
+        print(
+            "Peri-event z-score baselining (manual): "
+            "computed from peri-event ΔF/F baseline window "
+            f"(ΔF/F baseline={dff_baseline_statistic}, z-center={zscore_baseline_center}, "
+            f"window={peri_event_baseline_window_s:.3f}s)"
         )
 
     return result

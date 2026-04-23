@@ -97,7 +97,7 @@ class PhotometryPipeline:
             self,
             event_label: str = None,
             event_table_key: str = None,
-            signal_key: str = "zscore",
+            signal_key: str = "dff",
     ) -> pd.DataFrame:
         """
         Build a concatenated long-form peri-event dataframe from all completed sessions,
@@ -144,7 +144,7 @@ class PhotometryPipeline:
             epochs_by_signal = EventEpochExtractor.extract_epochs_for_signals(
                 time_s=time_s,
                 event_times_s=event_times_s,
-                preprocessed_signals={signal_key: completed_session.preprocessed_signals[signal_key]},
+                preprocessed_signals={'dff': completed_session.preprocessed_signals['dff'], 'zscore': completed_session.preprocessed_signals['zscore']},
                 n_pre=n_pre,
                 n_post=n_post,
                 extract_epoched_data_callable=extract_epoched_data,
@@ -161,8 +161,8 @@ class PhotometryPipeline:
                 peri_t=peri_t,
                 epochs_z=epochs_z,
             )
-            session_dataframe["event_type"] = event_table_key
 
+            session_dataframe["event_type"] = event_table_key
             session_level_dataframes.append(session_dataframe)
 
         if not session_level_dataframes:

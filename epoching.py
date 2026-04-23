@@ -59,11 +59,37 @@ class EventEpochExtractor:
         """
         epochs_by_signal: dict[str, np.ndarray] = {}
         for signal_name, signal in preprocessed_signals.items():
-            epochs_by_signal[signal_name] = extract_epoched_data_callable(
-                signal=signal,
-                time_s=time_s,
-                event_times_s=event_times_s,
-                n_pre=n_pre,
-                n_post=n_post,
-            )
+            # epochs_by_signal[signal_name] = extract_epoched_data_callable(
+            #     signal=signal,
+            #     time_s=time_s,
+            #     event_times_s=event_times_s,
+            #     n_pre=n_pre,
+            #     n_post=n_post,
+            # )
+            if signal_name == 'dff':
+
+                epochs_by_signal[signal_name] = extract_epoched_data_callable(
+                    signal=signal,
+                    time_s=time_s,
+                    event_times_s=event_times_s,
+                    n_pre=n_pre,
+                    n_post=n_post,
+                    signal_kind=signal_name,
+                    peri_event_baseline_window_s=2.0,
+                    dff_baseline_statistic="median",
+                )
+            elif signal_name == 'zscore':
+                epochs_by_signal[signal_name] = extract_epoched_data_callable(
+                    signal=signal,  # optional; kept for interface symmetry
+                    time_s=time_s,
+                    event_times_s=event_times_s,
+                    n_pre=n_pre,
+                    n_post=n_post,
+                    signal_kind=signal_name,
+                    dff_signal_for_zscore=preprocessed_signals["dff"],  # required
+                    peri_event_baseline_window_s=2.0,
+                    dff_baseline_statistic="median",
+                    zscore_baseline_center="mean",
+                )
+
         return epochs_by_signal

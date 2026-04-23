@@ -535,15 +535,15 @@ class PhotometryPlotter:
             ax=axis,
         )
 
-        # baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
-        # axis.axvspan(
-        #     -baseline_window_s,
-        #     0,
-        #     color="grey",
-        #     alpha=0.15,
-        #     label=f"Baseline window ({baseline_window_s:.1f} s)",
-        #     zorder=0,
-        # )
+        baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
+        axis.axvspan(
+            -baseline_window_s,
+            0,
+            color="grey",
+            alpha=0.15,
+            label=f"Baseline window ({baseline_window_s:.1f} s)",
+            zorder=0,
+        )
         axis.axvline(0, color=color_event_onset, ls="--", lw=0.8, label="Event onset")
 
         axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
@@ -623,13 +623,13 @@ class PhotometryPlotter:
         )
 
         baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
-        # axis.axvspan(
-        #     -baseline_window_s,
-        #     0,
-        #     color="grey",
-        #     alpha=0.15,
-        #     label=f"Baseline window ({baseline_window_s:.1f} s)",
-        # )
+        axis.axvspan(
+            -baseline_window_s,
+            0,
+            color="grey",
+            alpha=0.15,
+            label=f"Baseline window ({baseline_window_s:.1f} s)",
+        )
         axis.axvline(
             0,
             color=color_event_onset,
@@ -677,6 +677,7 @@ class PhotometryPlotter:
                 vmin=vmin,
                 vmax=vmax,
             )
+
 
             ax.set_xlim(self.peri_t[0], self.peri_t[-1])
             ax.xaxis.set_major_locator(mticker.MultipleLocator(heatmap_xtick_major))

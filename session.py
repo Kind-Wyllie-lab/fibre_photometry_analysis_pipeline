@@ -179,7 +179,7 @@ class PhotometrySession:
         epochs_by_signal = EventEpochExtractor.extract_epochs_for_signals(
             time_s=time_s,
             event_times_s=self.event_times_s,
-            preprocessed_signals={'zscore': self.preprocessed_signals['zscore']},
+            preprocessed_signals={'dff': self.preprocessed_signals['dff'], 'zscore': self.preprocessed_signals['zscore']},
             n_pre=n_pre,
             n_post=n_post,
             extract_epoched_data_callable=extract_epoched_data,
@@ -187,7 +187,7 @@ class PhotometrySession:
         dt_s = float(np.median(np.diff(time_s)))
         self.peri_t = (np.arange(-n_pre, n_post, dtype=float) * dt_s)
 
-        self.epochs_z = epochs_by_signal['zscore']
+        self.epochs_z = epochs_by_signal['dff']
         plotter = PhotometryPlotter(
             df_clean=self.df_clean,
             dff_fitted=self.preprocessed_signals['dff'],
@@ -199,7 +199,7 @@ class PhotometrySession:
             t_zero_s=self.t_zero_s,
             filtered_events=self.events_to_use,
             figure_output_directory=self.output_directory,
-            peri_event_plot_mode="trials",
+            peri_event_plot_mode="trials"
         )
         plotter.run_all()
 
