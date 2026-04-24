@@ -1038,13 +1038,13 @@ class PhotometryGroupAnalyzer:
                 linewidth=lw_peri_mean,
                 ax=axis,
             )
-            axis.fill_between(
-                signal_dataframe["time_s"].to_numpy(),
-                (signal_dataframe["group_mean_zscore"] - signal_dataframe["group_sem_zscore"]).to_numpy(),
-                (signal_dataframe["group_mean_zscore"] + signal_dataframe["group_sem_zscore"]).to_numpy(),
-                color=color_zscore,
-                alpha=0.25,
-            )
+            # axis.fill_between(
+            #     signal_dataframe["time_s"].to_numpy(),
+            #     (signal_dataframe["group_mean_zscore"] - signal_dataframe["group_sem_zscore"]).to_numpy(),
+            #     (signal_dataframe["group_mean_zscore"] + signal_dataframe["group_sem_zscore"]).to_numpy(),
+            #     color=color_zscore,
+            #     alpha=0.25,
+            # )
             axis.axvline(0, color=color_event_onset, linestyle="--", linewidth=0.8)
             axis.set_ylabel("Z-score")
             axis.set_title(
@@ -1167,16 +1167,6 @@ class PhotometryGroupAnalyzer:
             except ValueError as error:
                 print(f"Skipping event {event_index}: {error}")
 
-    def export_group_tables(self) -> None:
-        """
-        Export group summary tables for downstream statistics and figure reuse.
-        """
-        all_events_summary = self.compute_group_summary_all_events()
-        all_events_summary.to_csv(
-            self.output_directory / "group_summary_all_events_zscore.csv",
-            index=False,
-        )
-
     def _finalize_figure(self, figure: plt.Figure, filename_stem: str) -> None:
         """
         Save and/or preview a figure according to project configuration.
@@ -1229,7 +1219,7 @@ def run_group_level_plots_for_event_types(
         AUC end time in seconds.
     max_event_index : int, default=12
         Number of first events for AUC and single-event plots.
-    session_name_for_auc : str or None, default="Recall"
+    session_name_for_auc : str or None, default="Recall"qq
         Session name restriction for AUC plotting. Set to None to compute across all sessions.
     """
     group_output_root.mkdir(parents=True, exist_ok=True)
@@ -1239,36 +1229,42 @@ def run_group_level_plots_for_event_types(
         output_dir = group_output_root / event_label
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        group_peri_event_dataframe = completed_pipeline.build_group_peri_event_dataframe(event_label, event_table_key)
+        group_peri_event_dff = completed_pipeline.build_group_peri_event_dataframe(event_label, event_table_key, signal_key='dff')
+        group_peri_event_zscore = completed_pipeline.build_group_peri_event_dataframe(event_label, event_table_key, signal_key='zscore')
 
-        if group_peri_event_dataframe.empty:
+        if group_peri_event_dff.empty:
             print(f"[GROUP] No data for event type {event_label!r} -> skipping")
             continue
 
-        group_analyzer = PhotometryGroupAnalyzer(
-            session_level_peri_event_dataframe=group_peri_event_dataframe,
+        group_analyzer_dff = PhotometryGroupAnalyzer(
+            session_level_peri_event_dataframe=group_peri_event_dff,
             output_directory=output_dir,
         )
 
-        group_analyzer.plot_group_average_all_events()
-        group_analyzer.plot_group_average_single_event(event_index=1)
-        group_analyzer.plot_all_single_event_group_averages()
-
-        group_analyzer.plot_group_event_auc_across_first_events(
-            auc_window_start_s=auc_window_start_s,
-            auc_window_end_s=auc_window_end_s,
-            max_event_index=max_event_index,
-            session_name=session_name_for_auc,
+        group_analyzer_zscore = PhotometryGroupAnalyzer(
+            session_level_peri_event_dataframe=group_peri_event_zscore,
+            output_directory=output_dir,
         )
+        for signal_type in [group_analyzer_dff, group_analyzer_zscore]:
+            signal_type.plot_group_average_all_events()
+            signal_type.plot_group_average_single_event(event_index=1)
+            signal_type.plot_all_single_event_group_averages()
 
-        for animal in group_analyzer.metadata_dataframe["animal"].astype(str).values:
-            try:
-                group_analyzer.plot_animal_auc_window_benchmark_3d(
-                    animal=animal,
-                    auc_window_start_s=auc_window_start_s,
-                    auc_window_end_s=auc_window_end_s,
-                    max_event_index=max_event_index,
-                    session_name=session_name_for_auc,
-                )
-            except ValueError as exc:
-                print(f"[GROUP] Skip animal={animal}: {exc}")
+            signal_type.plot_group_event_auc_across_first_events(
+                auc_window_start_s=auc_window_start_s,
+                auc_window_end_s=auc_window_end_s,
+                max_event_index=max_event_index,
+                session_name=session_name_for_auc,
+            )
+
+            for animal in signal_type.metadata_dataframe["animal"].astype(str).values:
+                try:
+                    signal_type.plot_animal_auc_window_benchmark_3d(
+                        animal=animal,
+                        auc_window_start_s=auc_window_start_s,
+                        auc_window_end_s=auc_window_end_s,
+                        max_event_index=max_event_index,
+                        session_name=session_name_for_auc,
+                    )
+                except ValueError as exc:
+                    print(f"[GROUP] Skip animal={animal}: {exc}")

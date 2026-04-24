@@ -61,6 +61,7 @@ figure_size_peri = (10, 6)
 
 save_figures = False
 preview_figures = True
+run_single_animal_plots = True
 #FIGURES_DIR = OUTPUT_DIR / "figures"
 #FIGURES_DIR.mkdir(exist_ok=True, parents=True)
 
