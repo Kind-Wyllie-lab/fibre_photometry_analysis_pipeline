@@ -162,6 +162,8 @@ class PhotometryPipeline:
                 epochs_z=epochs_z,
             )
 
+            print(epochs_by_signal['zscore'].shape)
+            print(completed_session.animal)
             session_dataframe["event_type"] = event_table_key
             session_level_dataframes.append(session_dataframe)
 

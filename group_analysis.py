@@ -225,6 +225,9 @@ class PhotometryGroupAnalyzer:
         pandas.DataFrame
             One row per animal, group, session, and timepoint.
         """
+        self.session_level_peri_event_dataframe["time_s"] = (
+            self.session_level_peri_event_dataframe["time_s"].astype(float).round(3)
+        )
         animal_averaged_dataframe = (
             self.session_level_peri_event_dataframe
             .groupby(["animal", "group", "session_name", "time_s"], as_index=False)["zscore"]
@@ -242,21 +245,21 @@ class PhotometryGroupAnalyzer:
         pandas.DataFrame
             Group summary table for all-event peri-event z-score.
         """
+        self.session_level_peri_event_dataframe["time_s"] = (
+            self.session_level_peri_event_dataframe["time_s"].astype(float).round(3)
+        )
+
         animal_averaged_dataframe = self.compute_animal_averaged_all_events()
 
         group_summary_dataframe = (
             animal_averaged_dataframe
-            .groupby(["group", "session_name", "time_s"], as_index=False)
+            .groupby(["animal", "group", "session_name", "time_s"], as_index=False)
             .agg(
                 group_mean_zscore=("animal_mean_zscore", "mean"),
                 group_standard_deviation=("animal_mean_zscore", "std"),
                 n_animals=("animal_mean_zscore", "count"),
             )
         )
-        group_summary_dataframe["group_sem_zscore"] = (
-            group_summary_dataframe["group_standard_deviation"] / np.sqrt(group_summary_dataframe["n_animals"])
-        )
-
         return group_summary_dataframe
 
     def compute_animal_averaged_single_event(self, event_index: int) -> pd.DataFrame:
@@ -276,7 +279,9 @@ class PhotometryGroupAnalyzer:
         single_event_dataframe = self.session_level_peri_event_dataframe.loc[
             self.session_level_peri_event_dataframe["event_index"] == event_index
         ].copy()
-
+        single_event_dataframe["time_s"] = (
+            single_event_dataframe["time_s"].astype(float).round(3)
+        )
         if single_event_dataframe.empty:
             raise ValueError(f"No data found for event_index={event_index}")
 
@@ -306,16 +311,13 @@ class PhotometryGroupAnalyzer:
 
         group_summary_dataframe = (
             animal_event_dataframe
-            .groupby(["group", "session_name", "time_s"], as_index=False)
+            .groupby(["animal", "group", "session_name", "time_s"], as_index=False)
             .agg(
                 group_mean_zscore=("animal_mean_zscore", "mean"),
-                group_standard_deviation=("animal_mean_zscore", "std"),
                 n_animals=("animal_mean_zscore", "count"),
             )
         )
-        group_summary_dataframe["group_sem_zscore"] = (
-            group_summary_dataframe["group_standard_deviation"] / np.sqrt(group_summary_dataframe["n_animals"])
-        )
+
         group_summary_dataframe["event_index"] = event_index
 
         return group_summary_dataframe
@@ -392,7 +394,7 @@ class PhotometryGroupAnalyzer:
                     "group": grouping_values[1],
                     "session_name": grouping_values[2],
                     "event_index": grouping_values[3],
-                    "auc_0_to_5s": auc_value,
+                    f"auc": auc_value,
                 }
             )
 
@@ -440,14 +442,10 @@ class PhotometryGroupAnalyzer:
             animal_event_auc_dataframe
             .groupby(["group", "session_name", "event_index"], as_index=False)
             .agg(
-                group_mean_auc=("auc_0_to_5s", "mean"),
-                group_standard_deviation=("auc_0_to_5s", "std"),
-                n_animals=("auc_0_to_5s", "count"),
+                group_mean_auc=("auc", "mean"),
+                group_standard_deviation=("auc", "std"),
+                n_animals=("auc", "count"),
             )
-        )
-        group_event_auc_summary["group_sem_auc"] = (
-                group_event_auc_summary["group_standard_deviation"]
-                / np.sqrt(group_event_auc_summary["n_animals"])
         )
 
         return group_event_auc_summary
@@ -953,21 +951,11 @@ class PhotometryGroupAnalyzer:
                 data=group_dataframe,
                 x="event_index",
                 y="group_mean_auc",
-                errorbar=None,
+                errorbar='se',
                 marker="o",
                 color=color_zscore,
                 linewidth=lw_peri_mean,
                 ax=axis,
-            )
-
-            axis.errorbar(
-                group_dataframe["event_index"].to_numpy(dtype=int),
-                group_dataframe["group_mean_auc"].to_numpy(dtype=float),
-                yerr=group_dataframe["group_sem_auc"].to_numpy(dtype=float),
-                fmt="none",
-                ecolor=color_zscore,
-                elinewidth=1.2,
-                capsize=3,
             )
 
             axis.set_xticks(np.arange(1, max_event_index + 1, dtype=int))
@@ -1033,18 +1021,12 @@ class PhotometryGroupAnalyzer:
                 data=signal_dataframe,
                 x="time_s",
                 y="group_mean_zscore",
-                errorbar=None,
+                errorbar='se',
                 color=color_zscore,
                 linewidth=lw_peri_mean,
                 ax=axis,
             )
-            # axis.fill_between(
-            #     signal_dataframe["time_s"].to_numpy(),
-            #     (signal_dataframe["group_mean_zscore"] - signal_dataframe["group_sem_zscore"]).to_numpy(),
-            #     (signal_dataframe["group_mean_zscore"] + signal_dataframe["group_sem_zscore"]).to_numpy(),
-            #     color=color_zscore,
-            #     alpha=0.25,
-            # )
+
             axis.axvline(0, color=color_event_onset, linestyle="--", linewidth=0.8)
             axis.set_ylabel("Z-score")
             axis.set_title(
@@ -1115,18 +1097,12 @@ class PhotometryGroupAnalyzer:
                 data=signal_dataframe,
                 x="time_s",
                 y="group_mean_zscore",
-                errorbar=None,
+                errorbar='se',
                 color=color_zscore,
                 linewidth=lw_peri_mean,
                 ax=axis,
             )
-            axis.fill_between(
-                signal_dataframe["time_s"].to_numpy(),
-                (signal_dataframe["group_mean_zscore"] - signal_dataframe["group_sem_zscore"]).to_numpy(),
-                (signal_dataframe["group_mean_zscore"] + signal_dataframe["group_sem_zscore"]).to_numpy(),
-                color=color_zscore,
-                alpha=0.25,
-            )
+
             axis.axvline(0, color=color_event_onset, linestyle="--", linewidth=0.8)
             axis.set_ylabel("Z-score")
             axis.set_title(
@@ -1159,13 +1135,11 @@ class PhotometryGroupAnalyzer:
 
         event_indices = sorted(dataframe["event_index"].dropna().unique().astype(int))
         for event_index in event_indices:
-            try:
-                self.plot_group_average_single_event(
-                    event_index=event_index,
-                    session_name=session_name,
-                )
-            except ValueError as error:
-                print(f"Skipping event {event_index}: {error}")
+            self.plot_group_average_single_event(
+                event_index=event_index,
+                session_name=session_name,
+            )
+
 
     def _finalize_figure(self, figure: plt.Figure, filename_stem: str) -> None:
         """
@@ -1194,7 +1168,7 @@ def run_group_level_plots_for_event_types(
     event_types: dict[str, str],
     group_output_root: Path,
     auc_window_start_s: float = 0.0,
-    auc_window_end_s: float = 5.0,
+    auc_window_end_s: float = 2.0,
     max_event_index: int = 12,
     session_name_for_auc: str | None = "Recall",
 ) -> None:

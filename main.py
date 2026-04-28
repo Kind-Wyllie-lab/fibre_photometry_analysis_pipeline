@@ -70,9 +70,9 @@ if __name__ == "__main__":
 
     event_types = {
         "LED_events": "cs_onsets",
-        "LED_events": "cs_offsets",
-        "freezing_onsets": "freezing_onsets",
-        "freezing_offsets": "freezing_offsets",
+        # "LED_events": "cs_offsets",
+        # "freezing_onsets": "freezing_onsets",
+        # "freezing_offsets": "freezing_offsets",
     }
 
     run_group_level_plots_for_event_types(

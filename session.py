@@ -136,10 +136,6 @@ class PhotometrySession:
         self.animal_path = self.base_directory / self.animal
         self.session_path = self.animal_path / self.session_name
 
-        if self.animal == 'Rat_4879':
-            params.sample_rate_hz = params.sample_rate_hz * 2/3
-        else:
-            params.sample_rate_hz = 30.0
     def _infer_skip_first_event(self) -> bool:
         """
         Infer whether the first cluster event should be excluded for this session.

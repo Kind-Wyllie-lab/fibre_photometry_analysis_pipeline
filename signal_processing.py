@@ -23,8 +23,7 @@ from typing import Tuple, Optional, Literal
 from scipy.signal import savgol_filter
 from scipy.stats import linregress
 import pandas as pd
-from params import (calcium_channel, ref_channel, baseline_samples,
-                    time_pre_event_s, time_post_event_s, selected_clusters, sample_rate_hz)
+from params import (calcium_channel, ref_channel, selected_clusters)
 
 import numpy as np
 import pandas as pd
