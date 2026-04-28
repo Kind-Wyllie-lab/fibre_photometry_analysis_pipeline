@@ -464,6 +464,123 @@ class PhotometryPlotter:
         fig.tight_layout()
         self._finalize_figure(fig, f"dff_zscore_traces_{self.stem}")
 
+    def plot_peri_event_auc_by_trial(
+            self,
+            auc_start_s: float = 0.0,
+            auc_end_s: float = 2.0,
+            colormap_name: str = "Spectral",
+            marker_size: float = 55.0,
+            point_alpha: float = 0.85,
+            show_colorbar: bool = True,
+    ) -> None:
+        """
+        Compute and plot per-trial peri-event z-score AUC for a single session.
+
+        The AUC is computed for each trial over the interval [auc_start_s, auc_end_s]
+        relative to event onset (t=0) using trapezoidal integration.
+
+        Parameters
+        ----------
+        auc_start_s : float, default=0.0
+            Start of AUC integration window in seconds relative to event onset.
+        auc_end_s : float, default=2.0
+            End of AUC integration window in seconds relative to event onset.
+        colormap_name : str, default="Spectral"
+            Matplotlib colormap name used to color points by trial index.
+        marker_size : float, default=55.0
+            Scatter marker size.
+        point_alpha : float, default=0.85
+            Scatter marker alpha.
+        show_colorbar : bool, default=True
+            Whether to show colorbar mapping trial index to color.
+
+        Raises
+        ------
+        ValueError
+            If epochs/timebase are inconsistent or if no timepoints fall within the AUC window.
+        """
+        if self.epochs_z is None or self.peri_t is None:
+            raise ValueError("epochs_z and peri_t must be available before plotting AUC by trial")
+
+        n_trials, n_timepoints = self.epochs_z.shape
+        if len(self.peri_t) != n_timepoints:
+            raise ValueError(f"peri_t length {len(self.peri_t)} != epoch length {n_timepoints}")
+
+        if auc_end_s <= auc_start_s:
+            raise ValueError("auc_end_s must be greater than auc_start_s")
+
+        peri_t = np.asarray(self.peri_t, dtype=float)
+        auc_mask = (peri_t >= auc_start_s) & (peri_t <= auc_end_s)
+        if np.sum(auc_mask) < 2:
+            raise ValueError(
+                f"Not enough peri_t points in AUC window [{auc_start_s}, {auc_end_s}] s "
+                f"(found {np.sum(auc_mask)} points)"
+            )
+
+        auc_t = peri_t[auc_mask]
+        auc_values = np.trapz(self.epochs_z[:, auc_mask], x=auc_t, axis=1).astype(float)
+
+        auc_dataframe = pd.DataFrame(
+            {
+                "trial": np.arange(1, n_trials + 1, dtype=int),
+                "auc_zscore_0_to_2s": auc_values,
+            }
+        )
+
+        fig, ax = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
+
+        cmap = mpl.cm.get_cmap(colormap_name, n_trials if n_trials > 1 else 2)
+        norm = mpl.colors.Normalize(vmin=1, vmax=max(1, n_trials))
+
+        ax.scatter(
+            auc_dataframe["trial"].to_numpy(),
+            auc_dataframe["auc_zscore_0_to_2s"].to_numpy(),
+            c=[cmap(norm(t)) for t in auc_dataframe["trial"].to_numpy()],
+            s=marker_size,
+            alpha=point_alpha,
+            edgecolor="none",
+        )
+
+        # Optional connecting line to help temporal reading across trials
+        ax.plot(
+            auc_dataframe["trial"].to_numpy(),
+            auc_dataframe["auc_zscore_0_to_2s"].to_numpy(),
+            color="black",
+            lw=0.8,
+            alpha=0.35,
+            zorder=0,
+        )
+
+        ax.axhline(0.0, color="k", lw=0.9, alpha=0.35)
+        ax.set_xlabel("Trial index")
+        ax.set_ylabel("AUC (z-score·s)")
+        ax.set_title(
+            f"Per-trial AUC of z-score [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
+            f"(n={n_trials} trials)"
+        )
+        ax.grid(alpha=0.3)
+
+        # Ticks: show integer trial indices
+        ax.set_xlim(0.5, n_trials + 0.5)
+        if n_trials <= 20:
+            ax.set_xticks(np.arange(1, n_trials + 1, dtype=int))
+        else:
+            ax.xaxis.set_major_locator(plt.MaxNLocator(10, integer=True))
+
+        self._set_xtick_params(ax)
+        self._set_ytick_params(ax)
+
+        if show_colorbar and n_trials > 1:
+            sm = ScalarMappable(norm=norm, cmap=cmap)
+            sm.set_array([])
+            cbar = fig.colorbar(sm, ax=ax, pad=0.02)
+            cbar.set_label("Trial index")
+            if n_trials > 12:
+                cbar.set_ticks(np.linspace(1, n_trials, 6, dtype=int))
+
+        fig.tight_layout()
+        self._finalize_figure(fig, f"peri_event_auc_trials_{auc_start_s:.1f}_to_{auc_end_s:.1f}s_{self.stem}")
+
     def plot_peri_event_trials(
             self,
             colormap_name: str = "Spectral",
@@ -730,11 +847,18 @@ class PhotometryPlotter:
         self.plot_peri_event_average()
         self.plot_peri_event_trials()
         self.plot_peri_event_heatmaps()
-
+        self.plot_peri_event_auc_by_trial(
+            auc_start_s=0.0,
+            auc_end_s=2.0,
+            colormap_name="Spectral",
+            point_alpha=0.85,
+            show_colorbar=True,
+        )
         if self.save_figures_enabled:
             print(f"SUCCESS: all figures saved to {self.output_directory}")
         else:
             print("SUCCESS: plotting completed (SAVE_FIGURES=False)")
+
 def plot_freezing_ratio_profiles(
     freezing_profile_df: pd.DataFrame,
     mode: Literal["group_mean_sem", "individual_animals"] = "group_mean_sem",
