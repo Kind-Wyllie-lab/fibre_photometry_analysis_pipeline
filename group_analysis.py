@@ -998,7 +998,7 @@ class PhotometryGroupAnalyzer:
         figure, axes = plt.subplots(
             len(self.subplot_group_order),
             1,
-            figsize=(figure_size_peri[0], figure_size_peri[1] * len(self.subplot_group_order)),
+            figsize=(figure_size_peri[0], figure_size_peri[1]),
             sharex=True,
             sharey=True,
         )
@@ -1074,7 +1074,7 @@ class PhotometryGroupAnalyzer:
         figure, axes = plt.subplots(
             len(self.subplot_group_order),
             1,
-            figsize=(figure_size_peri[0], figure_size_peri[1] * len(self.subplot_group_order)),
+            figsize=(figure_size_peri[0], figure_size_peri[1]),
             sharex=True,
             sharey=True,
         )

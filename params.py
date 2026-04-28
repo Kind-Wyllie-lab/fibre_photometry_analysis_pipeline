@@ -56,7 +56,7 @@ USE_MOTION_CORR = True"""
 # === FIGURE CORE ===
 figure_dpi = 300
 figure_format = "png"
-figure_size_trace = (14, 6)
+figure_size_trace = (10, 6)
 figure_size_peri = (10, 6)
 
 save_figures = False
