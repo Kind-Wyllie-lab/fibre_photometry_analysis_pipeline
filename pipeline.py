@@ -90,10 +90,10 @@ class PhotometryPipeline:
         if self.animal_names is not None:
             return list(self.animal_names)
 
-        base_directory = Path(self.base_directory)
-        return sorted(
-            [name for name in os.listdir(base_directory) if name.startswith("Rat")]
-        )
+        xls_animals_matadata_path = self.base_directory / 'animals_metadata.ods'
+        xls_animals_matadata = pd.read_excel(xls_animals_matadata_path)
+
+        return xls_animals_matadata['animal_name'].values.tolist()
 
     def build_group_peri_event_dataframe(
             self,
