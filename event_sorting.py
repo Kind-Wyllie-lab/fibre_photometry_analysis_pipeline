@@ -412,15 +412,17 @@ def process_ttl_events(
         freezing_onsets_s = freeze_onset_edges["TimeStamp"].to_numpy(dtype=float) / 1000.0 if not freeze_onset_edges.empty else None
         freezing_offsets_s = freeze_offset_edges["TimeStamp"].to_numpy(dtype=float) / 1000.0 if not freeze_offset_edges.empty else None
 
-        #cleanup wrong triggers at the beginning that occur sometimes
-        cs_onsets_s = np.array([i for i in cs_onsets_s if i > 90])
-        cs_offsets_s = np.array([i for i in cs_offsets_s if i > 120])
+    #cleanup wrong triggers at the beginning that occur sometimes
+    cs_onsets_s = np.array([i for i in cs_onsets_s if i > 90])
+    cs_offsets_s = np.array([i for i in cs_offsets_s if i > 120])
+    shock = cs_onsets_s + 9 # during conditioning shock comes 9 seconds after cs onset, for recall its "expected shock"
 
     return {
         "LED_events": {
             "raw_LED_events": raw_led_events_s,
             "cs_onsets": cs_onsets_s,
             "cs_offsets": cs_offsets_s,
+            "shock": shock,
         },
         "freezing_events": {
             "freezing_onsets": freezing_onsets_s,
