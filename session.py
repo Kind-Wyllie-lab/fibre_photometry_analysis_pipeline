@@ -171,7 +171,7 @@ class PhotometrySession:
         time_s = self.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
 
         # Select event times from the requested event table
-        self.event_times_s = self.event_tables['LED_events']['cs_onsets']
+        self.event_times_s = self.event_tables['cs_onsets']
 
         n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
         n_post = int(params.time_post_event_s * params.sample_rate_hz)
@@ -206,7 +206,7 @@ class PhotometrySession:
         if self.session_name == "Recall":
             analyzer = SessionBootstrapAUCAnalyzer(
                 session=self,
-                event_times_s=self.event_tables['LED_events']['cs_onsets'],
+                event_times_s=self.event_tables['cs_onsets'],
                 event_name="CS onset",
                 baseline_window_s=2.0,
                 auc_window_s=(0.0, 2.0),
@@ -219,7 +219,7 @@ class PhotometrySession:
         elif self.session_name == "Cond":
             analyzer = SessionBootstrapAUCAnalyzer(
                 session=self,
-                event_times_s=self.event_tables['LED_events']['cs_onsets'],
+                event_times_s=self.event_tables['cs_onsets'],
                 event_name="CS onset",
                 baseline_window_s=2.0,
                 auc_window_s=(0.0, 2.0),
@@ -232,7 +232,7 @@ class PhotometrySession:
 
             analyzer = SessionBootstrapAUCAnalyzer(
                 session=self,
-                event_times_s=self.event_tables['LED_events']['shock'],
+                event_times_s=self.event_tables['shock'],
                 event_name="shock",
                 baseline_window_s=2.0,
                 auc_window_s=(0.0, 2.0),

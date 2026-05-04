@@ -175,82 +175,6 @@ def summarize_clusters_first_last(
     return first_events, last_events
 
 
-def process_event_stream(
-    df_clean: pd.DataFrame,
-    event_column: str,
-    gap_threshold_ms: float,
-    stream_name: str,
-    timestamp_column: str = "TimeStamp",
-) -> dict[str, pd.DataFrame]:
-    """
-    Process one event stream (binary column) into onset/offset events and clusters.
-
-    Parameters
-    ----------
-    df_clean : pandas.DataFrame
-        Cleaned dataframe including `TimeStamp` and event columns.
-    event_column : str
-        Binary column name (0/1).
-    gap_threshold_ms : float
-        Cluster separation gap (ms).
-    stream_name : str
-        Label for outputs and saving.
-    timestamp_column : str, default="TimeStamp"
-        Timestamp column name.
-
-    Returns
-    -------
-    dict
-        Dictionary containing:
-        - ``onsets``: onset events dataframe
-        - ``offsets``: offset events dataframe
-        - ``onsets_clustered``: clustered onsets dataframe
-        - ``offsets_clustered``: clustered offsets dataframe
-        - ``cluster_first_onsets``: 1st onset per cluster
-        - ``cluster_last_onsets``: last onset per cluster
-        - ``cluster_first_offsets``: 1st offset per cluster
-        - ``cluster_last_offsets``: last offset per cluster
-    """
-    onsets = extract_edge_events_from_binary_column(df_clean, event_column=event_column, edge="onset", timestamp_column=timestamp_column)
-    offsets = extract_edge_events_from_binary_column(df_clean, event_column=event_column, edge="offset", timestamp_column=timestamp_column)
-
-    onsets_clustered = cluster_events_by_gap(onsets, gap_threshold_ms=gap_threshold_ms, timestamp_column=timestamp_column, cluster_column="cs_n")
-    offsets_clustered = cluster_events_by_gap(offsets, gap_threshold_ms=gap_threshold_ms, timestamp_column=timestamp_column, cluster_column="cs_n")
-
-    cluster_first_onsets, cluster_last_onsets = summarize_clusters_first_last(onsets_clustered, timestamp_column=timestamp_column, cluster_column="cs_n")
-    cluster_first_offsets, cluster_last_offsets = summarize_clusters_first_last(offsets_clustered, timestamp_column=timestamp_column, cluster_column="cs_n")
-
-    return {
-        f"{stream_name}_onsets": onsets,
-        f"{stream_name}_offsets": offsets,
-        f"{stream_name}_onsets_clustered": onsets_clustered,
-        f"{stream_name}_offsets_clustered": offsets_clustered,
-        f"{stream_name}_cluster_first_onsets": cluster_first_onsets,
-        f"{stream_name}_cluster_last_onsets": cluster_last_onsets,
-        f"{stream_name}_cluster_first_offsets": cluster_first_offsets,
-        f"{stream_name}_cluster_last_offsets": cluster_last_offsets,
-    }
-
-
-def save_event_tables(output_dir: str | Path, tables: dict[str, pd.DataFrame]) -> None:
-    """
-    Save multiple event tables to disk.
-
-    Parameters
-    ----------
-    output_dir : str or Path
-        Directory to write CSVs to.
-    tables : dict[str, pandas.DataFrame]
-        Dictionary mapping filename stems to dataframes.
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    for name, df in tables.items():
-        out_path = output_dir / f"{name}.csv"
-        df.to_csv(out_path, index=False)
-        print(f"Saved: {out_path}")
-
 def _cluster_and_get_first_last_event_times_s(
     df_edges: pd.DataFrame,
     gap_threshold_ms: float,
@@ -299,8 +223,6 @@ def _cluster_and_get_first_last_event_times_s(
 def process_ttl_events(
     df_clean: pd.DataFrame,
     output_dir: str | Path,
-    led_column: str = "Events_LED",
-    freezing_column: str = "freezing_event",
     gap_threshold_ms: float = event_gap_ms,
 ) -> dict[str, dict[str, Optional[np.ndarray]]]:
     """
@@ -351,13 +273,13 @@ def process_ttl_events(
     # -----------------------
     led_onset_edges = extract_edge_events_from_binary_column(
         df_clean,
-        event_column=led_column,
+        event_column='Events_LED',
         edge="onset",
         timestamp_column="TimeStamp",
     )
     led_offset_edges = extract_edge_events_from_binary_column(
         df_clean,
-        event_column=led_column,
+        event_column='Events_LED',
         edge="offset",
         timestamp_column="TimeStamp",
     )
@@ -375,10 +297,8 @@ def process_ttl_events(
         gap_threshold_ms=gap_threshold_ms,
         timestamp_column="TimeStamp",
     )
-    if led_column not in df_clean.columns:
-        raise ValueError(f"Missing LED column: {led_column!r}")
 
-    raw_led_mask = pd.to_numeric(df_clean[led_column], errors="coerce").fillna(0).astype(int).clip(0, 1) == 1
+    raw_led_mask = pd.to_numeric(df_clean['Events_LED'], errors="coerce").fillna(0).astype(int).clip(0, 1) == 1
     raw_led_events_s = df_clean.loc[raw_led_mask, "TimeStamp"].to_numpy(dtype=float) / 1000.0
 
     # -----------------------
@@ -387,8 +307,8 @@ def process_ttl_events(
     freezing_onsets_s: Optional[np.ndarray] = None
     freezing_offsets_s: Optional[np.ndarray] = None
 
-    if freezing_column in df_clean.columns:
-        freezing_series = pd.to_numeric(df_clean[freezing_column], errors="coerce")
+    if 'freezing' in df_clean.columns:
+        freezing_series = pd.to_numeric(df_clean['freezing'], errors="coerce")
 
         # Build a binary state even if the column is sparse (NaN except at transitions)
         freezing_state = freezing_series.ffill().fillna(0).astype(int).clip(0, 1)
@@ -417,15 +337,10 @@ def process_ttl_events(
     cs_offsets_s = np.array([i for i in cs_offsets_s if i > 120])
     shock = cs_onsets_s + 9 # during conditioning shock comes 9 seconds after cs onset, for recall its "expected shock"
 
-    return {
-        "LED_events": {
-            "raw_LED_events": raw_led_events_s,
+    return {"raw_LED_events": raw_led_events_s,
             "cs_onsets": cs_onsets_s,
             "cs_offsets": cs_offsets_s,
             "shock": shock,
-        },
-        "freezing_events": {
             "freezing_onsets": freezing_onsets_s,
             "freezing_offsets": freezing_offsets_s,
-        },
-    }
+            }

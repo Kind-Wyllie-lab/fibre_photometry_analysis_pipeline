@@ -185,7 +185,7 @@ class PhotometryGroupAnalyzer:
         metadata_dataframe["animal"] = metadata_dataframe["animal"].astype(str)
         metadata_dataframe["group"] = metadata_dataframe["group"].astype(str)
 
-        return metadata_dataframe
+        return metadata_dataframe.dropna()
 
     def _attach_group_metadata(self, dataframe: pd.DataFrame) -> pd.DataFrame:
         """
@@ -431,6 +431,7 @@ class PhotometryGroupAnalyzer:
             Group-level summary dataframe with mean AUC, standard deviation,
             SEM, and animal count for each event index.
         """
+
         animal_event_auc_dataframe = self.compute_animal_event_auc(
             auc_window_start_s=auc_window_start_s,
             auc_window_end_s=auc_window_end_s,
@@ -1165,7 +1166,7 @@ class PhotometryGroupAnalyzer:
 
 def run_group_level_plots_for_event_types(
     completed_pipeline,
-    event_types: dict[str, str],
+    event_types: list,
     group_output_root: Path,
     auc_window_start_s: float = 0.0,
     auc_window_end_s: float = 2.0,
@@ -1198,16 +1199,16 @@ def run_group_level_plots_for_event_types(
     """
     group_output_root.mkdir(parents=True, exist_ok=True)
 
-    for event_label, event_table_key in event_types.items():
+    for event_table_key in event_types:
 
-        output_dir = group_output_root / event_label
+        output_dir = group_output_root / event_table_key
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        group_peri_event_dff = completed_pipeline.build_group_peri_event_dataframe(event_label, event_table_key, signal_key='dff')
-        group_peri_event_zscore = completed_pipeline.build_group_peri_event_dataframe(event_label, event_table_key, signal_key='zscore')
+        group_peri_event_dff = completed_pipeline.build_group_peri_event_dataframe(event_table_key, signal_key='dff')
+        group_peri_event_zscore = completed_pipeline.build_group_peri_event_dataframe(event_table_key, signal_key='zscore')
 
         if group_peri_event_dff.empty:
-            print(f"[GROUP] No data for event type {event_label!r} -> skipping")
+            print(f"[GROUP] No data for event type {event_table_key!r} -> skipping")
             continue
 
         group_analyzer_dff = PhotometryGroupAnalyzer(
@@ -1223,6 +1224,16 @@ def run_group_level_plots_for_event_types(
             signal_type.plot_group_average_all_events()
             signal_type.plot_group_average_single_event(event_index=1)
             signal_type.plot_all_single_event_group_averages()
+            if 'cs' in event_table_key:
+                if session_name_for_auc == 'Recall':
+                    max_event_index = 12
+                elif session_name_for_auc == 'Cond':
+                    max_event_index = 6
+            else:
+                max_event_index = 1000 #FIXME in case of freezing events, cannot have max event
+            print('###########################')
+            print(max_event_index)
+            print('###########################')
 
             signal_type.plot_group_event_auc_across_first_events(
                 auc_window_start_s=auc_window_start_s,

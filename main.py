@@ -68,12 +68,7 @@ def run_pipeline():
 if __name__ == "__main__":
     completed_pipeline = run_pipeline()
 
-    event_types = {
-        "LED_events": "cs_onsets",
-        # "LED_events": "cs_offsets",
-        # "freezing_onsets": "freezing_onsets",
-        # "freezing_offsets": "freezing_offsets",
-    }
+    event_types = ["cs_onsets","shock", "cs_offsets", "freezing_onsets", "freezing_offsets"]
 
     run_group_level_plots_for_event_types(
         completed_pipeline=completed_pipeline,
@@ -81,8 +76,7 @@ if __name__ == "__main__":
         group_output_root=Path(base_path) / "group_outputs",
         auc_window_start_s=0.0,
         auc_window_end_s=5.0,
-        max_event_index=12,
-        session_name_for_auc="Recall",
+        session_name_for_auc="Cond",
     )
 
     metadata_df = pd.read_excel(
