@@ -307,8 +307,8 @@ def process_ttl_events(
     freezing_onsets_s: Optional[np.ndarray] = None
     freezing_offsets_s: Optional[np.ndarray] = None
 
-    if 'freezing' in df_clean.columns:
-        freezing_series = pd.to_numeric(df_clean['freezing'], errors="coerce")
+    if 'freezing_event' in df_clean.columns:
+        freezing_series = pd.to_numeric(df_clean['freezing_event'], errors="coerce")
 
         # Build a binary state even if the column is sparse (NaN except at transitions)
         freezing_state = freezing_series.ffill().fillna(0).astype(int).clip(0, 1)

@@ -27,8 +27,6 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-
-
 import params
 from params import (
     figure_size_peri,

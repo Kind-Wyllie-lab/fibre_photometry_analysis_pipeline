@@ -273,11 +273,11 @@ def build_freezing_behavior_profile_table(
         animal = str(getattr(sess, "animal"))
         sess_name = str(getattr(sess, "session_name"))
 
-        cs_onsets_s = sess.event_tables['LED_events']['cs_onsets']
-        cs_offsets_s = sess.event_tables['LED_events']['cs_offsets']
+        cs_onsets_s = sess.event_tables['cs_onsets']
+        cs_offsets_s = sess.event_tables['cs_offsets']
 
-        freezing_onsets_s = sess.event_tables['freezing_events']['freezing_onsets']
-        freezing_offsets_s = sess.event_tables['freezing_events']['freezing_offsets']
+        freezing_onsets_s = sess.event_tables['freezing_onsets']
+        freezing_offsets_s = sess.event_tables['freezing_offsets']
 
         # Skip sessions with no freezing scored
         if freezing_onsets_s is None or freezing_offsets_s is None:
@@ -307,6 +307,7 @@ def build_freezing_behavior_profile_table(
         row = {
             "animal": animal,
             session_column_name: sess_name,
+            'group': meta.loc[meta['animal']== animal]['group'].values[0]
         }
         row.update(ratios)
         rows.append(row)
@@ -315,7 +316,7 @@ def build_freezing_behavior_profile_table(
     if behavior_df.empty:
         return behavior_df
 
-    behavior_df = behavior_df.merge(meta, on="animal", how="left", validate="many_to_one")
+    # behavior_df = behavior_df.merge(meta, on="animal", how="left", validate="many_to_one")
     if behavior_df["group"].isna().any():
         missing = sorted(behavior_df.loc[behavior_df["group"].isna(), "animal"].unique())
         raise ValueError(f"Missing genotype/group metadata for animals: {missing}")
