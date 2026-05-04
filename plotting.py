@@ -581,6 +581,107 @@ class PhotometryPlotter:
         fig.tight_layout()
         self._finalize_figure(fig, f"peri_event_auc_trials_{auc_start_s:.1f}_to_{auc_end_s:.1f}s_{self.stem}")
 
+    def plot_peri_event_trial_traces_stacked_with_auc(
+            self,
+            auc_start_s: float = 0.0,
+            auc_end_s: float = 2.0,
+            trace_color: str = "black",
+            trace_linewidth: float = 1.0,
+            auc_fill_color: str = "grey",
+            auc_fill_alpha: float = 0.25,
+            max_trials: Optional[int] = None,
+    ) -> None:
+        """
+        Plot peri-event z-score traces as vertically stacked subplots (one subplot per trial),
+        shading the AUC region under the curve in grey.
+
+        Parameters
+        ----------
+        auc_start_s : float, default=0.0
+            Start of AUC shading window (s, relative to event onset).
+        auc_end_s : float, default=2.0
+            End of AUC shading window (s, relative to event onset).
+        trace_color : str, default="black"
+            Line color for trial traces.
+        trace_linewidth : float, default=1.0
+            Line width for trial traces.
+        auc_fill_color : str, default="grey"
+            Fill color for AUC shading.
+        auc_fill_alpha : float, default=0.25
+            Alpha for AUC shading.
+        max_trials : int or None, default=None
+            If provided, plot only the first `max_trials` trials.
+
+        Raises
+        ------
+        ValueError
+            If epochs/timebase are missing or inconsistent.
+        """
+        if self.epochs_z is None or self.peri_t is None:
+            raise ValueError("epochs_z and peri_t must be available before plotting stacked trial traces")
+
+        peri_t = np.asarray(self.peri_t, dtype=float)
+        n_trials, n_timepoints = self.epochs_z.shape
+
+        if len(peri_t) != n_timepoints:
+            raise ValueError(f"peri_t length {len(peri_t)} != epoch length {n_timepoints}")
+        if auc_end_s <= auc_start_s:
+            raise ValueError("auc_end_s must be greater than auc_start_s")
+
+        n_plot = n_trials if max_trials is None else int(min(max_trials, n_trials))
+        if n_plot <= 0:
+            raise ValueError("max_trials results in zero plotted trials")
+
+        auc_mask = (peri_t >= auc_start_s) & (peri_t <= auc_end_s)
+        if np.sum(auc_mask) < 2:
+            raise ValueError(
+                f"Not enough peri_t points in AUC window [{auc_start_s}, {auc_end_s}] s "
+                f"(found {np.sum(auc_mask)} points)"
+            )
+
+        fig, axes = plt.subplots(
+            n_plot,
+            1,
+            figsize=(figure_size_peri[0], max(2.0, 1.2 * n_plot)),
+            sharex=True,
+            sharey=True,
+        )
+        if n_plot == 1:
+            axes = [axes]
+
+        for trial_idx, ax in enumerate(axes, start=1):
+            y = self.epochs_z[trial_idx - 1, :].astype(float)
+
+            ax.plot(peri_t, y, color=trace_color, lw=trace_linewidth)
+
+            # Shade AUC region under the curve (relative to 0 baseline)
+            ax.fill_between(
+                peri_t[auc_mask],
+                0.0,
+                y[auc_mask],
+                color=auc_fill_color,
+                alpha=auc_fill_alpha,
+                linewidth=0.0,
+            )
+
+            ax.axvline(0.0, color=color_event_onset, ls="--", lw=0.8, alpha=0.9)
+
+            ax.set_ylabel(f"T{trial_idx}", rotation=0, labelpad=15)
+            ax.grid(alpha=0.25)
+            self._set_ytick_params(ax)
+
+        axes[-1].set_xlabel("Time from event (s)")
+        self._set_xtick_params(axes[-1])
+
+        fig.suptitle(
+            f"Peri-event z-score traces (stacked) with AUC shading [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
+            f"(n={n_plot}/{n_trials} trials)",
+            y=1.02,
+        )
+        fig.tight_layout()
+
+        self._finalize_figure(fig, f"peri_event_trials_stacked_auc_{auc_start_s:.1f}_to_{auc_end_s:.1f}s_{self.stem}")
+
     def plot_peri_event_trials(
             self,
             colormap_name: str = "Spectral",
@@ -847,6 +948,11 @@ class PhotometryPlotter:
         self.plot_peri_event_average()
         self.plot_peri_event_trials()
         self.plot_peri_event_heatmaps()
+        self.plot_peri_event_trial_traces_stacked_with_auc(
+            auc_start_s=0.0,
+            auc_end_s=2.0,
+        )
+
         self.plot_peri_event_auc_by_trial(
             auc_start_s=0.0,
             auc_end_s=2.0,
