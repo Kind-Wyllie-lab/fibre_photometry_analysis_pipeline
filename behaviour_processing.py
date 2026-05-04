@@ -286,17 +286,13 @@ def build_freezing_behavior_profile_table(
         if cs_onsets_s is None or cs_offsets_s is None:
             continue
 
-        try:
-            bout_intervals = build_behavior_bout_intervals_from_cs(
-                cs_onsets_s=cs_onsets_s,
-                cs_offsets_s=cs_offsets_s,
-                pre_cs_duration_s=pre_cs_duration_s,
-                post_last_cs_duration_s=post_last_cs_duration_s,
-                n_cs=n_cs,
-            )
-        except ValueError:
-            # not enough cs events, malformed timings, etc.
-            continue
+        bout_intervals = build_behavior_bout_intervals_from_cs(
+            cs_onsets_s=cs_onsets_s,
+            cs_offsets_s=cs_offsets_s,
+            pre_cs_duration_s=pre_cs_duration_s,
+            post_last_cs_duration_s=post_last_cs_duration_s,
+            n_cs=n_cs,
+        )
 
         # Use end of post bout as recording_end for closing open freezing intervals if needed
         recording_end_s = bout_intervals["post_cs12"][1]

@@ -59,13 +59,6 @@ class EventEpochExtractor:
         """
         epochs_by_signal: dict[str, np.ndarray] = {}
         for signal_name, signal in preprocessed_signals.items():
-            # epochs_by_signal[signal_name] = extract_epoched_data_callable(
-            #     signal=signal,
-            #     time_s=time_s,
-            #     event_times_s=event_times_s,
-            #     n_pre=n_pre,
-            #     n_post=n_post,
-            # )
             if signal_name == 'dff':
 
                 epochs_by_signal[signal_name] = extract_epoched_data_callable(
