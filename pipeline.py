@@ -91,7 +91,7 @@ class PhotometryPipeline:
             return list(self.animal_names)
 
         xls_animals_matadata_path = self.base_directory / 'animals_metadata.ods'
-        xls_animals_matadata = pd.read_excel(xls_animals_matadata_path)
+        xls_animals_matadata = pd.read_excel(xls_animals_matadata_path).dropna()
 
         return xls_animals_matadata['animal_name'].values.tolist()
 
@@ -228,23 +228,6 @@ class PhotometryPipeline:
                 session_processor = self.build_session(animal, session_name)
                 session_processor.run()
                 self.results.append(session_processor)
-                # event_times_s: for example freezing onsets, cs onsets, etc.
-                analyzer = SessionBootstrapAUCAnalyzer(
-                    session=session_processor,
-                    event_times_s=session_processor.event_tables['LED_events']['cs_onsets'],
-                    event_name="cs_onsets",
-                    baseline_window_s=2.0,
-                    auc_window_s=(0.0, 2.0),
-                    n_mocks=5000,
-                    random_seed=0,
-                )
 
-                # results_z = analyzer.run_for_signal("zscore")
-                # results_d = analyzer.run_for_signal("dff")
-
-                # Plot null + real AUC for each event (example: first 5 events)
-                fig_z = analyzer.plot_null_with_all_event_axvlines("zscore", bins=60, tail_mode="right", alpha_level=0.05)
-                fig_d = analyzer.plot_null_with_all_event_axvlines("dff", bins=60,  tail_mode="right", alpha_level=0.05)
-                plt.show()
 
         return self.results

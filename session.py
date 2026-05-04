@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 import params
+from bootstrap_analysis import SessionBootstrapAUCAnalyzer
 from epoching import EventEpochExtractor
 from preprocessing import extract_session_raw_data
 from event_sorting import process_ttl_events
@@ -201,6 +202,47 @@ class PhotometrySession:
             figure_output_directory=self.output_directory,
             peri_event_plot_mode="trials"
         )
+
+        if self.session_name == "Recall":
+            analyzer = SessionBootstrapAUCAnalyzer(
+                session=self,
+                event_times_s=self.event_tables['LED_events']['cs_onsets'],
+                event_name="CS onset",
+                baseline_window_s=2.0,
+                auc_window_s=(0.0, 2.0),
+                n_mocks=5000,
+                random_seed=0,
+            )
+
+            fig_z = analyzer.plot_null_with_all_event_axvlines("zscore", bins=60, tail_mode="right", alpha_level=0.05)
+            fig_d = analyzer.plot_null_with_all_event_axvlines("dff", bins=60, tail_mode="right", alpha_level=0.05)
+        elif self.session_name == "Cond":
+            analyzer = SessionBootstrapAUCAnalyzer(
+                session=self,
+                event_times_s=self.event_tables['LED_events']['cs_onsets'],
+                event_name="CS onset",
+                baseline_window_s=2.0,
+                auc_window_s=(0.0, 2.0),
+                n_mocks=5000,
+                random_seed=0,
+            )
+
+            fig_z = analyzer.plot_null_with_all_event_axvlines("zscore", bins=60, tail_mode="right", alpha_level=0.05)
+            fig_d = analyzer.plot_null_with_all_event_axvlines("dff", bins=60, tail_mode="right", alpha_level=0.05)
+
+            analyzer = SessionBootstrapAUCAnalyzer(
+                session=self,
+                event_times_s=self.event_tables['LED_events']['shock'],
+                event_name="shock",
+                baseline_window_s=2.0,
+                auc_window_s=(0.0, 2.0),
+                n_mocks=5000,
+                random_seed=0,
+            )
+
+            fig_z = analyzer.plot_null_with_all_event_axvlines("zscore", bins=60, tail_mode="right", alpha_level=0.05)
+            fig_d = analyzer.plot_null_with_all_event_axvlines("dff", bins=60, tail_mode="right", alpha_level=0.05)
+
         plotter.run_all()
 
     def session_exists(self) -> bool:
