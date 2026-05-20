@@ -22,7 +22,7 @@ from typing import Literal
 
 base_path = Path(r"/media/prignane/data_fast/Fibre_photmetry")
 
-sessions =  ["Recall"]
+sessions =  ["Cond"]
 
 def animal_output_dirs(animal_num: str, session:str):
     """Return (figures_dir, csv_dir). Create if missing."""

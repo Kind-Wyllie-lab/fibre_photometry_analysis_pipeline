@@ -70,15 +70,15 @@ if __name__ == "__main__":
 
     event_types = ['freezing_onsets', 'freezing_offsets', "cs_onsets", "shock", "cs_offsets",]  #
 
-    run_group_level_plots_for_event_types(
-        completed_pipeline=completed_pipeline,
-        event_types=event_types,
-        group_output_root=Path(base_path) / "group_outputs",
-        auc_window_start_s=0.0,
-        auc_window_end_s=2.0,
-        session_name_for_auc=params.sessions[0],
-    )
-    plt.show()
+    # run_group_level_plots_for_event_types(
+    #     completed_pipeline=completed_pipeline,
+    #     event_types=event_types,
+    #     group_output_root=Path(base_path) / "group_outputs",
+    #     auc_window_start_s=0.0,
+    #     auc_window_end_s=2.0,
+    #     session_name_for_auc=params.sessions[0],
+    # )
+    # plt.show()
     metadata_df = pd.read_excel(
         Path(base_path) / "animals_metadata.ods",
         engine="odf",
@@ -86,21 +86,21 @@ if __name__ == "__main__":
 
     freezing_profile_df = build_freezing_behavior_profile_table(
         completed_sessions=completed_pipeline.results,
-        metadata_dataframe=metadata_df,
+        metadata_dataframe=metadata_df, session_column_name=params.sessions[0],
     )
 
-    recall_df = freezing_profile_df.loc[freezing_profile_df["session_name"] == "Recall"]
+    recall_df = freezing_profile_df.loc[freezing_profile_df[params.sessions[0]] == params.sessions[0]]
 
     fig = plot_freezing_ratio_profiles(
         freezing_profile_df=freezing_profile_df,
         mode="group_mean_sem",
-        session_name="Recall",  # optional if column exists
+        session_name=params.sessions[0],  # optional if column exists
     )
 
     fig2 = plot_freezing_ratio_profiles(
         freezing_profile_df=freezing_profile_df,
         mode="individual_animals",
-        session_name="Recall",  # optional
+        session_name=params.sessions[0],  # optional
         colormap_animals="tab20",
         legend_max_items=40,
     )
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         freezing_profile_df=freezing_profile_df,
         animal_col="animal",
         genotype_col="group",
-        session_col="session_name",  # omit or keep if present
+        session_col=params.sessions[0],  # omit or keep if present
         value_col_out="freeze_pct",
         segment_col_out="segment",
     )
