@@ -178,7 +178,7 @@ class PhotometrySession:
         for channel in channels:
             self.preprocessed_signals_channel = self.preprocessed_signals[channel]
 
-            if self.animal in ['Rat_5091', 'Rat_5181']:
+            if self.animal in ['Rat_5091', 'Rat_5181']: # WARNING hardcoded, these animals froze the whole time
                 timings = ['cs_onsets', 'cs_offsets', 'shock']
             else:
                 timings = ['cs_onsets', 'cs_offsets', 'freezing_onsets', 'freezing_offsets', 'shock']
