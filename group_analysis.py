@@ -474,7 +474,7 @@ class PhotometryGroupAnalyzer:
                 data=group_dataframe,
                 x="event_index",
                 y="group_mean_auc",
-                errorbar=None,
+                errorbar='se',
                 marker="o",
                 color=color_zscore,
                 linewidth=lw_peri_mean,
