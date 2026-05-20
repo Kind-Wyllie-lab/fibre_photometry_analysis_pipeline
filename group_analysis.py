@@ -251,11 +251,9 @@ class PhotometryGroupAnalyzer:
 
         group_summary_dataframe = (
             animal_averaged_dataframe
-            .groupby(["group", "session_name", "time_s"], as_index=False)
+            .groupby(["animal", "group", "session_name", "time_s"], as_index=False)
             .agg(
                 group_mean_zscore=("animal_mean_zscore", "mean"),
-                group_standard_deviation=("animal_mean_zscore", "std"),
-                n_animals=("animal", "nunique"),
             )
         )
         return group_summary_dataframe
@@ -312,7 +310,6 @@ class PhotometryGroupAnalyzer:
             .groupby(["animal", "group", "session_name", "time_s"], as_index=False)
             .agg(
                 group_mean_zscore=("animal_mean_zscore", "mean"),
-                n_animals=("animal_mean_zscore", "count"),
             )
         )
 
@@ -402,16 +399,10 @@ class PhotometryGroupAnalyzer:
 
         group_event_auc_summary = (
             animal_event_auc_dataframe
-            .groupby(["group", "session_name", "event_index"], as_index=False)
+            .groupby(["animal", "group", "session_name", "event_index"], as_index=False)
             .agg(
                 group_mean_auc=("auc", "mean"),
-                group_standard_deviation=("auc", "std"),
-                n_animals=("auc", "count"),
             )
-        )
-        group_event_auc_summary["group_sem_auc"] = (
-                group_event_auc_summary["group_standard_deviation"]
-                / np.sqrt(group_event_auc_summary["n_animals"])
         )
 
         return group_event_auc_summary
@@ -481,20 +472,20 @@ class PhotometryGroupAnalyzer:
                 ax=axis,
             )
 
-            # SEM as shaded band (more correct than seaborn errorbar here because we already summarized)
-            axis.fill_between(
-                group_dataframe["event_index"].to_numpy(dtype=int),
-                (group_dataframe["group_mean_auc"] - group_dataframe["group_sem_auc"]).to_numpy(dtype=float),
-                (group_dataframe["group_mean_auc"] + group_dataframe["group_sem_auc"]).to_numpy(dtype=float),
-                color=color_zscore,
-                alpha=0.25,
-                linewidth=0.0,
-            )
+            # # SEM as shaded band (more correct than seaborn errorbar here because we already summarized)
+            # axis.fill_between(
+            #     group_dataframe["event_index"].to_numpy(dtype=int),
+            #     (group_dataframe["group_mean_auc"] - group_dataframe["group_sem_auc"]).to_numpy(dtype=float),
+            #     (group_dataframe["group_mean_auc"] + group_dataframe["group_sem_auc"]).to_numpy(dtype=float),
+            #     color=color_zscore,
+            #     alpha=0.25,
+            #     linewidth=0.0,
+            # )
 
             axis.set_xticks(event_indices_to_plot)
             axis.set_ylabel("AUC (z-score·s)")
 
-            max_n = int(group_dataframe["n_animals"].max())
+            max_n = len(group_dataframe['animal'].unique())
             suffix = "all events" if max_event_index is None else f"first {max_event_index} events"
             axis.set_title(
                 f"{group_name} — mean z-score AUC from "
@@ -581,7 +572,7 @@ class PhotometryGroupAnalyzer:
             palette=group_to_color,
             marker="o",
             linewidth=lw_peri_mean,
-            errorbar=None,  # we add SEM shading manually (correct for pre-aggregated data)
+            errorbar='se',
             ax=ax,
         )
 
@@ -594,14 +585,14 @@ class PhotometryGroupAnalyzer:
             if gdf.empty:
                 continue
 
-            ax.fill_between(
-                gdf["event_index"].to_numpy(dtype=int),
-                (gdf["group_mean_auc"] - gdf["group_sem_auc"]).to_numpy(dtype=float),
-                (gdf["group_mean_auc"] + gdf["group_sem_auc"]).to_numpy(dtype=float),
-                color=group_to_color[group_name],
-                alpha=0.22,
-                linewidth=0.0,
-            )
+            # ax.fill_between(
+            #     gdf["event_index"].to_numpy(dtype=int),
+            #     (gdf["group_mean_auc"] - gdf["group_sem_auc"]).to_numpy(dtype=float),
+            #     (gdf["group_mean_auc"] + gdf["group_sem_auc"]).to_numpy(dtype=float),
+            #     color=group_to_color[group_name],
+            #     alpha=0.22,
+            #     linewidth=0.0,
+            # )
 
         ax.set_xticks(event_indices_to_plot)
         ax.set_xlabel("Event index")
@@ -624,7 +615,7 @@ class PhotometryGroupAnalyzer:
         new_labels = []
         for lbl in labels:
             gdf = group_event_auc_summary.loc[group_event_auc_summary["group"] == lbl]
-            n_max = int(gdf["n_animals"].max()) if not gdf.empty else 0
+            n_max = len(gdf['animal'].unique()) if not gdf.empty else 0
             new_labels.append(f"{lbl} (n={n_max})")
 
         ax.legend(handles, new_labels, title="Group", frameon=False)
@@ -697,7 +688,7 @@ class PhotometryGroupAnalyzer:
             axis.set_ylabel("Z-score")
             axis.set_title(
                 f"Group peri-event average — {group_name} "
-                f"(all events, animal-level SEM, n={signal_dataframe['n_animals'].max()})"
+                f"(all events, animal-level SEM, n={len(signal_dataframe['animal'].unique())})"
             )
             axis.grid(alpha=0.3)
 
@@ -773,7 +764,7 @@ class PhotometryGroupAnalyzer:
             axis.set_ylabel("Z-score")
             axis.set_title(
                 f"Group peri-event average — {group_name} "
-                f"(event {event_index}, animal-level SEM, n={signal_dataframe['n_animals'].max()})"
+                f"(event {event_index}, animal-level SEM, n={len(signal_dataframe['animal'].unique())})"
             )
             axis.grid(alpha=0.3)
 
