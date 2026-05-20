@@ -1003,7 +1003,7 @@ def plot_freezing_ratio_profiles(
     animal_column: str = "animal",
     session_column: str = "session_name",
     session_name: Optional[str] = None,
-    include_post_cs12: bool = True,
+    include_post_cs: bool = True,
     groups_order: Sequence[str] = ("wt", "het", "gcamp"),
     figure_size: tuple[float, float] = (14.0, 5.0),
     colormap_animals: str = "tab20",
@@ -1028,8 +1028,8 @@ def plot_freezing_ratio_profiles(
         Session identifier column name (optional).
     session_name : str or None, default=None
         If provided and `session_column` exists, filter to this session.
-    include_post_cs12 : bool, default=True
-        Whether to include post_cs12 bout.
+    include_post_cs : bool, default=True
+        Whether to include post_cs bout.
     groups_order : sequence of str, default=("wt", "het", "gcamp")
         Ordering for group plots.
     figure_size : tuple of float, default=(14.0, 5.0)
@@ -1059,8 +1059,8 @@ def plot_freezing_ratio_profiles(
         bout_columns.append(f"cs_{i}")
         if i <= 10:
             bout_columns.append(f"noncs_{i}")
-    if include_post_cs12 and "post_cs12" in df.columns:
-        bout_columns.append("post_cs12")
+    if include_post_cs and "post_cs" in df.columns:
+        bout_columns.append("post_cs")
     bout_columns = [c for c in bout_columns if c in df.columns]
     if not bout_columns:
         raise ValueError("No bout columns found in freezing_profile_df")
@@ -1165,6 +1165,139 @@ def plot_freezing_ratio_profiles(
 
     fig.tight_layout()
     return fig
+
+def plot_single_animal_freezing_ratio_profile(
+    freezing_profile_df: pd.DataFrame,
+    animal_id: str,
+    group_column: str = "group",
+    animal_column: str = "animal",
+    session_column: str = "session_name",
+    session_name: Optional[str] = None,
+    include_post_cs: bool = True,
+    figure_size: tuple[float, float] = (14.0, 4.5),
+    line_color: str = "black",
+    line_width: float = 2.2,
+    marker: str = "o",
+) -> plt.Figure:
+    """
+    Plot freezing ratio behavior profile for a single animal as one line on one subplot.
+
+    Parameters
+    ----------
+    freezing_profile_df : pandas.DataFrame
+        Wide dataframe with one row per animal-session and freezing ratios in bout columns.
+    animal_id : str
+        Animal identifier to plot (must match `animal_column` values).
+    group_column : str, default="group"
+        Genotype/group column name.
+    animal_column : str, default="animal"
+        Animal identifier column name.
+    session_column : str, default="session_name"
+        Session identifier column name (optional).
+    session_name : str or None, default=None
+        If provided and `session_column` exists, restrict to a single session.
+        If not provided and multiple rows exist for this animal, they are averaged per bout.
+    include_post_cs : bool, default=True
+        Whether to include post_cs bout.
+    figure_size : tuple[float, float], default=(14.0, 4.5)
+        Figure size.
+    line_color : str, default="black"
+        Line color.
+    line_width : float, default=2.2
+        Line width.
+    marker : str, default="o"
+        Marker for points.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        Generated figure.
+
+    Raises
+    ------
+    ValueError
+        If the animal is not found or no bout columns are available.
+    """
+    required = {animal_column, group_column}
+    missing = required.difference(freezing_profile_df.columns)
+    if missing:
+        raise ValueError(f"freezing_profile_df missing required columns: {sorted(missing)}")
+
+    df = freezing_profile_df.copy()
+    df[animal_column] = df[animal_column].astype(str)
+
+    df_animal = df.loc[df[animal_column] == str(animal_id)].copy()
+    if df_animal.empty:
+        raise ValueError(f"Animal {animal_id!r} not found in freezing_profile_df[{animal_column!r}]")
+
+    if session_name is not None and session_column in df_animal.columns:
+        df_animal = df_animal.loc[df_animal[session_column] == session_name].copy()
+        if df_animal.empty:
+            raise ValueError(f"No rows for animal={animal_id!r} with session_name={session_name!r}")
+
+    # Ordered bouts: pre_cs, cs_1, noncs_1, ..., cs_12, post_cs (optional)
+    bout_columns = ["pre_cs"]
+    for i in range(1, 12 + 1):
+        bout_columns.append(f"cs_{i}")
+        if i <= 10:
+            bout_columns.append(f"noncs_{i}")
+
+    if include_post_cs and "post_cs" in df_animal.columns:
+        bout_columns.append("post_cs")
+
+    bout_columns = [c for c in bout_columns if c in df_animal.columns]
+    if not bout_columns:
+        raise ValueError("No bout columns found for plotting")
+
+    # If multiple rows (e.g. multiple sessions) remain, average within animal
+    # (one value per bout)
+    bout_means = df_animal[bout_columns].apply(pd.to_numeric, errors="coerce").mean(axis=0)
+
+    group_value = str(df_animal[group_column].iloc[0]) if group_column in df_animal.columns else "unknown"
+
+    df_long = (
+        bout_means.rename("freezing_ratio")
+        .reset_index()
+        .rename(columns={"index": "bout"})
+    )
+    df_long["bout"] = pd.Categorical(df_long["bout"], categories=bout_columns, ordered=True)
+    df_long = df_long.sort_values("bout")
+    df_long["bout_index"] = df_long["bout"].cat.codes.astype(int)
+
+    fig, ax = plt.subplots(1, 1, figsize=figure_size)
+
+    sns.lineplot(
+        data=df_long,
+        x="bout_index",
+        y="freezing_ratio",
+        estimator=None,
+        color=line_color,
+        linewidth=line_width,
+        marker=marker,
+        ax=ax,
+    )
+
+    ax.set_xlim(-0.5, len(bout_columns) - 0.5)
+    ax.set_ylim(0, 1.0)
+    ax.set_xlabel("Session bout")
+    ax.set_ylabel("Freezing ratio (time freezing / total time)")
+
+    title = f"{animal_id} ({group_value}) — Freezing ratio profile"
+    if session_name is not None:
+        title += f" | session={session_name}"
+    ax.set_title(title)
+
+    ax.grid(alpha=0.25)
+    ax.set_xticks(np.arange(len(bout_columns)))
+    ax.set_xticklabels(bout_columns, rotation=45, ha="right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    fig.tight_layout()
+
+    fig.savefig(f'{animal_id}_freezing_profile_{session_name}.svg')
+    return fig
+
 
 def plot_extinction_index_wt_vs_het(
     ext_df,

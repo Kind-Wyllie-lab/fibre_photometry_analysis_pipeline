@@ -160,7 +160,7 @@ def build_behavior_bout_intervals_from_cs(
         intervals[f"noncs_{i+1}"] = (float(cs_offsets_s[i]), float(cs_onsets_s[i + 1]))
 
     # post: 30 seconds after CS12 offset
-    intervals["post_cs12"] = (float(cs_offsets_s[n_cs - 1]), float(cs_offsets_s[n_cs - 1]) + float(post_last_cs_duration_s))
+    intervals["post_cs"] = (float(cs_offsets_s[n_cs - 1]), float(cs_offsets_s[n_cs - 1]) + float(post_last_cs_duration_s))
 
     return intervals
 
@@ -296,7 +296,7 @@ def build_freezing_behavior_profile_table(
         )
 
         # Use end of post bout as recording_end for closing open freezing intervals if needed
-        recording_end_s = bout_intervals["post_cs12"][1]
+        recording_end_s = bout_intervals["post_cs"][1]
 
         ratios = compute_freezing_ratio_per_bout(
             bout_intervals=bout_intervals,
@@ -327,7 +327,7 @@ def build_freezing_behavior_profile_table(
         ["pre_cs"]
         + [f"cs_{i}" for i in range(1, 13)]
         + [f"noncs_{i}" for i in range(1, 11)]
-        + ["post_cs12"]
+        + ["post_cs"]
     )
     existing_bout_cols = [c for c in bout_cols if c in behavior_df.columns]
     ordered_cols = ["animal", "group", session_column_name] + existing_bout_cols
@@ -350,7 +350,7 @@ def freezing_profile_wide_to_tidy(
     ----------
     freezing_profile_df : pandas.DataFrame
         Wide table with one row per animal/session and columns like
-        pre_cs, cs_1..cs_12, noncs_1..noncs_10, post_cs12.
+        pre_cs, cs_1..cs_12, noncs_1..noncs_10, post_cs.
     animal_col : str, default="animal"
         Animal identifier column.
     genotype_col : str, default="group"

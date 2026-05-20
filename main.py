@@ -24,7 +24,8 @@ import pandas as pd
 import params
 from behaviour_processing import build_freezing_behavior_profile_table, freezing_profile_wide_to_tidy, \
     compute_extinction_index, compute_modulation_index
-from plotting import plot_freezing_ratio_profiles, plot_extinction_index_wt_vs_het, plot_modulation_index_wt_vs_het
+from plotting import plot_freezing_ratio_profiles, plot_extinction_index_wt_vs_het, plot_modulation_index_wt_vs_het, \
+    plot_single_animal_freezing_ratio_profile
 
 matplotlib.use("TkAgg")
 
@@ -70,15 +71,15 @@ if __name__ == "__main__":
 
     event_types = ['freezing_onsets', 'freezing_offsets', "cs_onsets", "shock", "cs_offsets",]  #
 
-    # run_group_level_plots_for_event_types(
-    #     completed_pipeline=completed_pipeline,
-    #     event_types=event_types,
-    #     group_output_root=Path(base_path) / "group_outputs",
-    #     auc_window_start_s=0.0,
-    #     auc_window_end_s=2.0,
-    #     session_name_for_auc=params.sessions[0],
-    # )
-    # plt.show()
+    run_group_level_plots_for_event_types(
+        completed_pipeline=completed_pipeline,
+        event_types=event_types,
+        group_output_root=Path(base_path) / "group_outputs",
+        auc_window_start_s=0.0,
+        auc_window_end_s=2.0,
+        session_name_for_auc=params.sessions[0],
+    )
+    plt.show()
     metadata_df = pd.read_excel(
         Path(base_path) / "animals_metadata.ods",
         engine="odf",
@@ -90,6 +91,13 @@ if __name__ == "__main__":
     )
 
     recall_df = freezing_profile_df.loc[freezing_profile_df[params.sessions[0]] == params.sessions[0]]
+    for animal in recall_df['animal'].unique():
+        fig = plot_single_animal_freezing_ratio_profile(
+            freezing_profile_df=freezing_profile_df,
+            animal_id=animal,
+            session_name=params.sessions[0],  # optional
+        )
+
 
     fig = plot_freezing_ratio_profiles(
         freezing_profile_df=freezing_profile_df,

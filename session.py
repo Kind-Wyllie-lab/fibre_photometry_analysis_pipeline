@@ -177,7 +177,13 @@ class PhotometrySession:
 
         for channel in channels:
             self.preprocessed_signals_channel = self.preprocessed_signals[channel]
-            for timing in ['cs_onsets', 'cs_offsets', 'freezing_onsets', 'freezing_offsets', 'shock']:
+
+            if self.animal not in ['Rat_5091', 'Rat_5181']:
+                timings = ['cs_onsets', 'cs_offsets', 'shock']
+            else:
+                timings = ['cs_onsets', 'cs_offsets', 'freezing_onsets', 'freezing_offsets', 'shock']
+
+            for timing in timings:
 
                 if timing in self.event_tables.keys():
                     self.event_times_s = self.event_tables[timing]

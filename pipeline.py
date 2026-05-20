@@ -142,7 +142,7 @@ class PhotometryPipeline:
 
         session_level_dataframes: list[pd.DataFrame] = []
         if 'freezing' in event_table_key:
-            completed_sessions = [i for i in self.results.copy() if i.animal != 'Rat_5091'] # This rat freezes he whole session, will fail if we keep it
+            completed_sessions = [i for i in self.results.copy() if i not in ['Rat_5091', 'Rat_5181']] # These rat freezes he whole session, will fail if we keep it
         else:
             completed_sessions = self.results.copy()
 
