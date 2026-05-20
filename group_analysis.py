@@ -251,11 +251,11 @@ class PhotometryGroupAnalyzer:
 
         group_summary_dataframe = (
             animal_averaged_dataframe
-            .groupby(["animal", "group", "session_name", "time_s"], as_index=False)
+            .groupby(["group", "session_name", "time_s"], as_index=False)
             .agg(
                 group_mean_zscore=("animal_mean_zscore", "mean"),
                 group_standard_deviation=("animal_mean_zscore", "std"),
-                n_animals=("animal_mean_zscore", "count"),
+                n_animals=("animal", "nunique"),
             )
         )
         return group_summary_dataframe
@@ -499,7 +499,7 @@ class PhotometryGroupAnalyzer:
             axis.set_title(
                 f"{group_name} — mean z-score AUC from "
                 f"{auc_window_start_s:.1f} to {auc_window_end_s:.1f} s "
-                f"({suffix}, n≤{max_n})"
+                f"({suffix}, n={max_n})"
             )
             axis.grid(alpha=0.3)
 
@@ -507,6 +507,132 @@ class PhotometryGroupAnalyzer:
         figure.tight_layout()
 
         output_stem = "group_event_auc"
+        if max_event_index is None:
+            output_stem += "_all_events"
+        else:
+            output_stem += f"_first_{max_event_index}_events"
+        if session_name is not None:
+            output_stem += f"_{session_name}"
+
+        self._finalize_figure(figure, output_stem)
+
+    def plot_group_event_auc_single_axis_with_hue(
+            self,
+            auc_window_start_s: float = 0.0,
+            auc_window_end_s: float = 5.0,
+            max_event_index: Optional[int] = 12,
+            session_name: Optional[str] = None,
+            hue_order: Optional[list[str]] = None,
+    ) -> None:
+        """
+        Plot group AUC across event indices on a single axis using seaborn hue for groups.
+
+        If `max_event_index` is None, all available event indices are plotted.
+
+        Parameters
+        ----------
+        auc_window_start_s : float, default=0.0
+            Start time of AUC integration window (s).
+        auc_window_end_s : float, default=5.0
+            End time of AUC integration window (s).
+        max_event_index : int or None, default=12
+            If None, includes all events.
+        session_name : str or None, default=None
+            If provided, restrict to one session.
+        hue_order : list of str or None, default=None
+            Order for group hue. If None, uses `self.subplot_group_order`.
+        """
+        group_event_auc_summary = self.compute_group_event_auc_summary(
+            auc_window_start_s=auc_window_start_s,
+            auc_window_end_s=auc_window_end_s,
+            max_event_index=max_event_index,
+            session_name=session_name,
+        )
+
+        if session_name is not None:
+            group_event_auc_summary = group_event_auc_summary.loc[
+                group_event_auc_summary["session_name"] == session_name
+                ].copy()
+
+        if group_event_auc_summary.empty:
+            raise ValueError("No group-level event AUC data available for plotting")
+
+        # Determine x ticks
+        if max_event_index is None:
+            event_indices_to_plot = np.sort(group_event_auc_summary["event_index"].unique().astype(int))
+        else:
+            event_indices_to_plot = np.arange(1, int(max_event_index) + 1, dtype=int)
+
+        if hue_order is None:
+            hue_order = list(self.subplot_group_order)
+
+        # Prepare a palette (distinct, colorblind-friendly)
+        palette = sns.color_palette("colorblind", n_colors=len(hue_order))
+        group_to_color = {g: palette[i] for i, g in enumerate(hue_order)}
+
+        figure, ax = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True, sharey=True)
+
+        sns.lineplot(
+            data=group_event_auc_summary,
+            x="event_index",
+            y="group_mean_auc",
+            hue="group",
+            hue_order=hue_order,
+            palette=group_to_color,
+            marker="o",
+            linewidth=lw_peri_mean,
+            errorbar=None,  # we add SEM shading manually (correct for pre-aggregated data)
+            ax=ax,
+        )
+
+        # SEM shading per group
+        for group_name in hue_order:
+            gdf = group_event_auc_summary.loc[
+                group_event_auc_summary["group"] == group_name
+                ].sort_values("event_index")
+
+            if gdf.empty:
+                continue
+
+            ax.fill_between(
+                gdf["event_index"].to_numpy(dtype=int),
+                (gdf["group_mean_auc"] - gdf["group_sem_auc"]).to_numpy(dtype=float),
+                (gdf["group_mean_auc"] + gdf["group_sem_auc"]).to_numpy(dtype=float),
+                color=group_to_color[group_name],
+                alpha=0.22,
+                linewidth=0.0,
+            )
+
+        ax.set_xticks(event_indices_to_plot)
+        ax.set_xlabel("Event index")
+        ax.set_ylabel("AUC (z-score·s)")
+
+        suffix = "all events" if max_event_index is None else f"first {max_event_index} events"
+        session_suffix = f" | {session_name}" if session_name is not None else ""
+        ax.set_title(
+            f"Group mean z-score AUC [{auc_window_start_s:.1f}, {auc_window_end_s:.1f}] s "
+            f"({suffix}){session_suffix}"
+        )
+
+        # Legend with n per group (max n across event indices)
+        handles, labels = ax.get_legend_handles_labels()
+        # labels includes title entry at index 0 in some seaborn versions; handle robustly:
+        if labels and labels[0] == "group":
+            labels = labels[1:]
+            handles = handles[1:]
+
+        new_labels = []
+        for lbl in labels:
+            gdf = group_event_auc_summary.loc[group_event_auc_summary["group"] == lbl]
+            n_max = int(gdf["n_animals"].max()) if not gdf.empty else 0
+            new_labels.append(f"{lbl} (n={n_max})")
+
+        ax.legend(handles, new_labels, title="Group", frameon=False)
+
+        ax.grid(alpha=0.3)
+        figure.tight_layout()
+
+        output_stem = "group_event_auc_single_plot"
         if max_event_index is None:
             output_stem += "_all_events"
         else:
@@ -777,6 +903,12 @@ def run_group_level_plots_for_event_types(
                     max_event_index = None
 
                 signal_type.plot_group_event_auc_across_first_events(
+                    auc_window_start_s=auc_window_start_s,
+                    auc_window_end_s=auc_window_end_s,
+                    max_event_index=max_event_index,
+                    session_name=session_name_for_auc,
+                )
+                signal_type.plot_group_event_auc_single_axis_with_hue(
                     auc_window_start_s=auc_window_start_s,
                     auc_window_end_s=auc_window_end_s,
                     max_event_index=max_event_index,
