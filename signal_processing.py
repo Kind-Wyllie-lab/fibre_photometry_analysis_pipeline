@@ -15,10 +15,11 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
+import re
 
 # signal_processing.py
 import numpy as np
-from typing import Tuple, Optional, Literal
+from typing import Tuple, Optional, Literal, Any
 
 from scipy.signal import savgol_filter
 from scipy.stats import linregress
@@ -251,39 +252,60 @@ def estimate_baseline_asls(
 def optionally_smooth_signal(
     signal: np.ndarray,
     enable_smoothing: bool = False,
-    window_length: int = 11,
-    polyorder: int = 3,
-) -> np.ndarray:
+    smoothness_w: int = 15,
+    ) -> np.ndarray:
     """
-    Optionally smooth a one-dimensional signal using a Savitzky-Golay filter.
+    Optionally smooth a 1D signal using the manual's "guide average" (moving average).
 
     Parameters
     ----------
-    signal : np.ndarray
-        One-dimensional input signal.
+    signal : numpy.ndarray
+        1D input signal.
     enable_smoothing : bool, default=False
-        If True, smooth the signal; otherwise return a copy unchanged.
-    window_length : int, default=11
-        Odd filter window length for Savitzky-Golay smoothing.
-    polyorder : int, default=3
-        Polynomial order for Savitzky-Golay smoothing.
+        If True, apply moving average smoothing.
+    smoothness_w : int, default=15
+        Smoothing window length W (manual range 5..50). Higher -> smoother.
 
     Returns
     -------
-    smoothed_signal : np.ndarray
-        Output signal after optional smoothing.
+    numpy.ndarray
+        Smoothed signal (or a copy if smoothing disabled).
     """
-    signal = np.asarray(signal, dtype=float)
+    x = np.asarray(signal, dtype=float)
     if not enable_smoothing:
-        return signal.copy()
+        return x.copy()
 
-    if window_length % 2 == 0:
-        window_length += 1
-    window_length = min(window_length, signal.size if signal.size % 2 == 1 else signal.size - 1)
-    if window_length <= polyorder:
-        return signal.copy()
+    w = int(smoothness_w)
+    if w < 1:
+        return x.copy()
+    w = max(1, w)
 
-    return savgol_filter(signal, window_length=window_length, polyorder=polyorder)
+    # moving average with edge padding to preserve length
+    kernel = np.ones(w, dtype=float) / float(w)
+    pad = w // 2
+    x_pad = np.pad(x, (pad, pad), mode="edge")
+    y = np.convolve(x_pad, kernel, mode="valid")
+    return y.astype(float)
+
+
+def _beta_to_asls_asymmetry(beta: float) -> float:
+    """
+    Map software baseline correction coefficient beta (5..12) onto AsLS asymmetry p.
+
+    Parameters
+    ----------
+    beta : float
+        Manual beta, typically 5..12 (default 8).
+
+    Returns
+    -------
+    float
+        AsLS asymmetry parameter p in (0, 1).
+    """
+    beta = float(beta)
+    if beta < 5 or beta > 12:
+        raise ValueError("baseline_beta must be in [5, 12] to match software manual")
+    return beta / 100.0
 
 
 def preprocess_photometry_dff_and_zscore(
@@ -294,13 +316,11 @@ def preprocess_photometry_dff_and_zscore(
     control_source: str = "410",
     apply_baseline_correction: bool = False,
     enable_smoothing: bool = False,
-    smoothing_window_length: int = 11,
-    smoothing_polyorder: int = 3,
     background_calcium: float | None = None,
     background_reference: float | None = None,
     baseline_smoothness_penalty: float = 1e6,
-    baseline_asymmetry_penalty: float = 0.01,
-) -> dict[str, np.ndarray | float]:
+    baseline_correction_algorithm: str = 'pls',
+    ) -> dict[str, np.ndarray | float]:
     """
     Compute fiber photometry preprocessing outputs according to the specified
     ΔF/F and Z-score definitions.
@@ -406,14 +426,14 @@ def preprocess_photometry_dff_and_zscore(
     calcium_fluorescence = optionally_smooth_signal(
         calcium_fluorescence,
         enable_smoothing=enable_smoothing,
-        window_length=smoothing_window_length,
-        polyorder=smoothing_polyorder,
+        # window_length=smoothing_window_length,
+        # polyorder=smoothing_polyorder,
     )
     reference_fluorescence = optionally_smooth_signal(
         reference_fluorescence,
         enable_smoothing=enable_smoothing,
-        window_length=smoothing_window_length,
-        polyorder=smoothing_polyorder,
+        # window_length=smoothing_window_length,
+        # polyorder=smoothing_polyorder,
     )
 
     n_samples = calcium_fluorescence.size
@@ -427,16 +447,27 @@ def preprocess_photometry_dff_and_zscore(
     baseline_median_raw = np.median(calcium_fluorescence[baseline_slice])
     full_trace_median_raw = np.median(calcium_fluorescence)
 
-    fluorescence_baseline = estimate_baseline_asls(
-        calcium_fluorescence,
-        smoothness_penalty=baseline_smoothness_penalty,
-        asymmetry_penalty=baseline_asymmetry_penalty,
-    )
-    reference_baseline = estimate_baseline_asls(
-        reference_fluorescence,
-        smoothness_penalty=baseline_smoothness_penalty,
-        asymmetry_penalty=baseline_asymmetry_penalty,
-    )
+    asls_p = _beta_to_asls_asymmetry(8)
+
+    if baseline_correction_algorithm == "pls":
+        fluorescence_baseline = estimate_baseline_asls(calcium_fluorescence,
+                                                       smoothness_penalty=baseline_smoothness_penalty,
+                                                       asymmetry_penalty=asls_p)
+        reference_baseline = estimate_baseline_asls(reference_fluorescence,
+                                                    smoothness_penalty=baseline_smoothness_penalty,
+                                                    asymmetry_penalty=asls_p)
+
+    elif baseline_correction_algorithm == "pls_downsample":
+        fluorescence_baseline = _downsample_and_fit_baseline_asls(calcium_fluorescence, 1,
+                                                                  baseline_smoothness_penalty, asls_p)
+        reference_baseline = _downsample_and_fit_baseline_asls(reference_fluorescence, 1,
+                                                               baseline_smoothness_penalty, asls_p)
+
+    elif baseline_correction_algorithm == "exponential":
+        # you need a separate exp-fit baseline estimator; can implement if you want exact match
+        raise NotImplementedError("Exponential Fit baseline not implemented yet")
+    else:
+        raise ValueError("Invalid baseline_correction_algorithm")
 
     if apply_baseline_correction:
         fluorescence_for_motion = calcium_fluorescence - fluorescence_baseline
@@ -500,6 +531,152 @@ def preprocess_photometry_dff_and_zscore(
         "zscore": zscore,
         "beta": beta,
     }
+
+
+def _downsample_and_fit_baseline_asls(x: np.ndarray, factor: int, lam: float, p: float) -> np.ndarray:
+    x = np.asarray(x, float)
+    factor = int(factor)
+    factor = max(1, factor)
+    if factor == 1 or x.size < 3 * factor:
+        return estimate_baseline_asls(x, smoothness_penalty=lam, asymmetry_penalty=p)
+
+    idx = np.arange(0, x.size, factor, dtype=int)
+    x_ds = x[idx]
+    b_ds = estimate_baseline_asls(x_ds, smoothness_penalty=lam, asymmetry_penalty=p)
+
+    # interpolate baseline back to full length
+    b_full = np.interp(np.arange(x.size), idx, b_ds)
+    return b_full.astype(float)
+
+
+def _resolve_photometry_column_name(df_clean: pd.DataFrame, channel_prefix: str, wavelength_nm: int) -> str:
+    """
+    Resolve a column name such as 'CH1-470' from a channel prefix and wavelength.
+
+    Parameters
+    ----------
+    df_clean : pandas.DataFrame
+        Input dataframe.
+    channel_prefix : str
+        Channel prefix, e.g. "CH1" or "CH2".
+    wavelength_nm : int
+        Wavelength (nm), e.g. 470 or 410.
+
+    Returns
+    -------
+    str
+        Column name in df_clean.
+
+    Raises
+    ------
+    ValueError
+        If the expected column is not found.
+    """
+    col = f"{channel_prefix}-{int(wavelength_nm)}"
+    if col not in df_clean.columns:
+        available = [c for c in df_clean.columns if c.startswith(f"{channel_prefix}-")]
+        raise ValueError(f"Missing column {col!r}. Available for {channel_prefix}: {available}")
+    return col
+
+
+def _detect_available_photometry_channel_prefixes(df_clean: pd.DataFrame) -> list[str]:
+    """
+    Detect available photometry channel prefixes (e.g. CH1, CH2) in df_clean.
+
+    Parameters
+    ----------
+    df_clean : pandas.DataFrame
+
+    Returns
+    -------
+    list of str
+        Sorted list of detected channel prefixes.
+    """
+    prefixes = set()
+    for col in df_clean.columns:
+        m = re.match(r"^(CH\d+)-\d+$", str(col))
+        if m:
+            prefixes.add(m.group(1))
+    return sorted(prefixes)
+
+
+
+def preprocess_photometry_multichannel_dff_and_zscore(
+    df_clean: pd.DataFrame,
+    calcium_wavelength_nm: int,
+    reference_wavelength_nm: int,
+    channel_prefixes: Optional[list[str]] = None,
+    baseline_interval_samples: int | None = None,
+    control_source: str = "410",
+    apply_baseline_correction: bool = False,
+    enable_smoothing: bool = False,
+    smoothing_window_length: int = 15,
+    smoothing_polyorder: int = 8,
+    background_calcium: float | None = None,
+    background_reference: float | None = None,
+    baseline_smoothness_penalty: float = 1e6,
+    baseline_asymmetry_penalty: float = 0.01,
+    ) -> dict[str, dict[str, Any]]:
+    """
+    Run `preprocess_photometry_dff_and_zscore` independently for each available photometry channel
+    (CH1, CH2, ...) found in df_clean.
+
+    Parameters
+    ----------
+    df_clean : pandas.DataFrame
+        Clean photometry dataframe with columns like 'CH1-470', 'CH1-410', optionally 'CH2-470', ...
+    calcium_wavelength_nm : int
+        Calcium wavelength identifier (nm), e.g. 470.
+    reference_wavelength_nm : int
+        Reference wavelength identifier (nm), e.g. 410 or 560.
+    channel_prefixes : list of str or None, default=None
+        If None, auto-detect prefixes (e.g. ['CH1','CH2']). If provided, restrict to these.
+    baseline_interval_samples, control_source, apply_baseline_correction, enable_smoothing, ...
+        Passed through to `preprocess_photometry_dff_and_zscore`.
+
+    Returns
+    -------
+    dict
+        Mapping:
+            {
+              "CH1": { ... outputs from preprocess_photometry_dff_and_zscore ... },
+              "CH2": { ... },
+            }
+
+    Notes
+    -----
+    This wrapper is the recommended way to support recordings containing either:
+    - a single photometry channel (CH1 only), or
+    - two photometry channels (CH1 and CH2).
+
+    You can then choose which channel to epoch/plot downstream.
+    """
+    if channel_prefixes is None:
+        channel_prefixes = _detect_available_photometry_channel_prefixes(df_clean)
+
+    if not channel_prefixes:
+        raise ValueError("No photometry channels detected (expected columns like 'CH1-470').")
+
+    results_by_channel: dict[str, dict[str, Any]] = {}
+
+    for ch in channel_prefixes:
+        calcium_col = _resolve_photometry_column_name(df_clean, channel_prefix=ch, wavelength_nm=calcium_wavelength_nm)
+        reference_col = _resolve_photometry_column_name(df_clean, channel_prefix=ch, wavelength_nm=reference_wavelength_nm)
+
+        channel_results = preprocess_photometry_dff_and_zscore(
+            df_clean=df_clean,
+            calcium_channel=calcium_col,
+            reference_channel=reference_col,
+            baseline_interval_samples=baseline_interval_samples,
+            control_source=control_source,
+            apply_baseline_correction=apply_baseline_correction,
+            enable_smoothing=enable_smoothing,
+            background_calcium=background_calcium,
+            background_reference=background_reference,
+            baseline_smoothness_penalty=baseline_smoothness_penalty        )
+        results_by_channel[ch] = channel_results
+
+    return results_by_channel
 
 
 def select_events_from_params(first_events: pd.DataFrame) -> pd.DataFrame:

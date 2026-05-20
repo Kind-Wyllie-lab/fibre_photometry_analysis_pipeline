@@ -203,7 +203,7 @@ def clean_and_map_events(df_raw: pd.DataFrame) -> pd.DataFrame:
     df['TimeStamp'] = pd.to_numeric(df['TimeStamp'], errors='coerce')
 
     # Flexible fluorescence columns
-    fluo_cols = [col for col in df.columns if col.startswith('CH1-')]
+    fluo_cols = [col for col in df.columns if col.startswith('CH')]
     if not fluo_cols:
         raise ValueError("No CH1-* columns")
     print(f"  Fluorescence cols: {fluo_cols}")

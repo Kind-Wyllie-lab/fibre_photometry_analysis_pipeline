@@ -68,17 +68,17 @@ def run_pipeline():
 if __name__ == "__main__":
     completed_pipeline = run_pipeline()
 
-    event_types = ["cs_onsets","shock", "cs_offsets", "freezing_onsets", "freezing_offsets"]
+    event_types = ['freezing_onsets', 'freezing_offsets', "cs_onsets", "shock", "cs_offsets",]  #
 
     run_group_level_plots_for_event_types(
         completed_pipeline=completed_pipeline,
         event_types=event_types,
         group_output_root=Path(base_path) / "group_outputs",
         auc_window_start_s=0.0,
-        auc_window_end_s=5.0,
-        session_name_for_auc="Cond",
+        auc_window_end_s=2.0,
+        session_name_for_auc=params.sessions[0],
     )
-
+    plt.show()
     metadata_df = pd.read_excel(
         Path(base_path) / "animals_metadata.ods",
         engine="odf",
@@ -159,7 +159,3 @@ if __name__ == "__main__":
         alpha=0.05,
     )
     plt.show()
-
-
-    print()
-    # plt.show()

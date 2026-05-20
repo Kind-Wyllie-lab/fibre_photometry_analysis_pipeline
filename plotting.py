@@ -123,8 +123,11 @@ class PhotometryPlotter:
     """
 
     df_clean: pd.DataFrame
+    channel_name: str
+    event_name: str
     dff_fitted: np.ndarray
     zscore: np.ndarray
+    epochs_dff: np.ndarray
     epochs_z: np.ndarray
     peri_t: np.ndarray
     stem: str
@@ -200,7 +203,7 @@ class PhotometryPlotter:
             Output filename stem without extension.
         """
         if self.save_figures_enabled:
-            output_path = self.output_directory / f"{filename}.{figure_format}"
+            output_path = self.output_directory / f"{filename}_{self.event_name}_{self.channel_name}.{figure_format}"
             fig.savefig(output_path, dpi=figure_dpi, format=figure_format, bbox_inches="tight")
             print(f"Saved: {output_path}")
 
@@ -499,87 +502,91 @@ class PhotometryPlotter:
         ValueError
             If epochs/timebase are inconsistent or if no timepoints fall within the AUC window.
         """
-        if self.epochs_z is None or self.peri_t is None:
-            raise ValueError("epochs_z and peri_t must be available before plotting AUC by trial")
 
-        n_trials, n_timepoints = self.epochs_z.shape
-        if len(self.peri_t) != n_timepoints:
-            raise ValueError(f"peri_t length {len(self.peri_t)} != epoch length {n_timepoints}")
+        for signal_type in ['dff', 'zscore']:
+            if signal_type == 'dff':
+                epochs = self.epochs_dff
+            elif signal_type == 'zscore':
+                epochs = self.epochs_z
 
-        if auc_end_s <= auc_start_s:
-            raise ValueError("auc_end_s must be greater than auc_start_s")
+            n_trials, n_timepoints = epochs.shape
+            if len(self.peri_t) != n_timepoints:
+                raise ValueError(f"peri_t length {len(self.peri_t)} != epoch length {n_timepoints}")
 
-        peri_t = np.asarray(self.peri_t, dtype=float)
-        auc_mask = (peri_t >= auc_start_s) & (peri_t <= auc_end_s)
-        if np.sum(auc_mask) < 2:
-            raise ValueError(
-                f"Not enough peri_t points in AUC window [{auc_start_s}, {auc_end_s}] s "
-                f"(found {np.sum(auc_mask)} points)"
+            if auc_end_s <= auc_start_s:
+                raise ValueError("auc_end_s must be greater than auc_start_s")
+
+            peri_t = np.asarray(self.peri_t, dtype=float)
+            auc_mask = (peri_t >= auc_start_s) & (peri_t <= auc_end_s)
+            if np.sum(auc_mask) < 2:
+                raise ValueError(
+                    f"Not enough peri_t points in AUC window [{auc_start_s}, {auc_end_s}] s "
+                    f"(found {np.sum(auc_mask)} points)"
+                )
+
+            auc_t = peri_t[auc_mask]
+            auc_values = np.trapz(epochs[:, auc_mask], x=auc_t, axis=1).astype(float)
+
+            auc_dataframe = pd.DataFrame(
+                {
+                    "trial": np.arange(1, n_trials + 1, dtype=int),
+                    f"auc_{signal_type}_0_to_2s": auc_values,
+                }
             )
 
-        auc_t = peri_t[auc_mask]
-        auc_values = np.trapz(self.epochs_z[:, auc_mask], x=auc_t, axis=1).astype(float)
+            fig, ax = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
 
-        auc_dataframe = pd.DataFrame(
-            {
-                "trial": np.arange(1, n_trials + 1, dtype=int),
-                "auc_zscore_0_to_2s": auc_values,
-            }
-        )
+            cmap = mpl.cm.get_cmap(colormap_name, n_trials if n_trials > 1 else 2)
+            norm = mpl.colors.Normalize(vmin=1, vmax=max(1, n_trials))
 
-        fig, ax = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
+            ax.scatter(
+                auc_dataframe["trial"].to_numpy(),
+                auc_dataframe[f"auc_{signal_type}_0_to_2s"].to_numpy(),
+                c=[cmap(norm(t)) for t in auc_dataframe["trial"].to_numpy()],
+                s=marker_size,
+                alpha=point_alpha,
+                edgecolor="none",
+            )
 
-        cmap = mpl.cm.get_cmap(colormap_name, n_trials if n_trials > 1 else 2)
-        norm = mpl.colors.Normalize(vmin=1, vmax=max(1, n_trials))
+            # Optional connecting line to help temporal reading across trials
+            ax.plot(
+                auc_dataframe["trial"].to_numpy(),
+                auc_dataframe[f"auc_{signal_type}_0_to_2s"].to_numpy(),
+                color="black",
+                lw=0.8,
+                alpha=0.35,
+                zorder=0,
+            )
 
-        ax.scatter(
-            auc_dataframe["trial"].to_numpy(),
-            auc_dataframe["auc_zscore_0_to_2s"].to_numpy(),
-            c=[cmap(norm(t)) for t in auc_dataframe["trial"].to_numpy()],
-            s=marker_size,
-            alpha=point_alpha,
-            edgecolor="none",
-        )
+            ax.axhline(0.0, color="k", lw=0.9, alpha=0.35)
+            ax.set_xlabel("Trial index")
+            ax.set_ylabel(f"AUC ({signal_type}·s)")
+            ax.set_title(
+                f"Per-trial AUC of {signal_type} [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
+                f"(n={n_trials} trials)"
+            )
+            ax.grid(alpha=0.3)
 
-        # Optional connecting line to help temporal reading across trials
-        ax.plot(
-            auc_dataframe["trial"].to_numpy(),
-            auc_dataframe["auc_zscore_0_to_2s"].to_numpy(),
-            color="black",
-            lw=0.8,
-            alpha=0.35,
-            zorder=0,
-        )
+            # Ticks: show integer trial indices
+            ax.set_xlim(0.5, n_trials + 0.5)
+            if n_trials <= 20:
+                ax.set_xticks(np.arange(1, n_trials + 1, dtype=int))
+            else:
+                ax.xaxis.set_major_locator(plt.MaxNLocator(10, integer=True))
 
-        ax.axhline(0.0, color="k", lw=0.9, alpha=0.35)
-        ax.set_xlabel("Trial index")
-        ax.set_ylabel("AUC (z-score·s)")
-        ax.set_title(
-            f"Per-trial AUC of z-score [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
-            f"(n={n_trials} trials)"
-        )
-        ax.grid(alpha=0.3)
+            self._set_xtick_params(ax)
+            self._set_ytick_params(ax)
 
-        # Ticks: show integer trial indices
-        ax.set_xlim(0.5, n_trials + 0.5)
-        if n_trials <= 20:
-            ax.set_xticks(np.arange(1, n_trials + 1, dtype=int))
-        else:
-            ax.xaxis.set_major_locator(plt.MaxNLocator(10, integer=True))
+            if show_colorbar and n_trials > 1:
+                sm = ScalarMappable(norm=norm, cmap=cmap)
+                sm.set_array([])
+                cbar = fig.colorbar(sm, ax=ax, pad=0.02)
+                cbar.set_label("Trial index")
+                if n_trials > 12:
+                    cbar.set_ticks(np.linspace(1, n_trials, 6, dtype=int))
 
-        self._set_xtick_params(ax)
-        self._set_ytick_params(ax)
-
-        if show_colorbar and n_trials > 1:
-            sm = ScalarMappable(norm=norm, cmap=cmap)
-            sm.set_array([])
-            cbar = fig.colorbar(sm, ax=ax, pad=0.02)
-            cbar.set_label("Trial index")
-            if n_trials > 12:
-                cbar.set_ticks(np.linspace(1, n_trials, 6, dtype=int))
-
-        fig.tight_layout()
-        self._finalize_figure(fig, f"peri_event_auc_trials_{auc_start_s:.1f}_to_{auc_end_s:.1f}s_{self.stem}")
+            fig.tight_layout()
+            self._finalize_figure(fig, f"peri_event_auc_trials_{signal_type}_{auc_start_s:.1f}_to_{auc_end_s:.1f}s_{self.stem}")
 
     def plot_peri_event_trial_traces_stacked_with_auc(
             self,
@@ -617,70 +624,75 @@ class PhotometryPlotter:
         ValueError
             If epochs/timebase are missing or inconsistent.
         """
-        if self.epochs_z is None or self.peri_t is None:
-            raise ValueError("epochs_z and peri_t must be available before plotting stacked trial traces")
 
-        peri_t = np.asarray(self.peri_t, dtype=float)
-        n_trials, n_timepoints = self.epochs_z.shape
 
-        if len(peri_t) != n_timepoints:
-            raise ValueError(f"peri_t length {len(peri_t)} != epoch length {n_timepoints}")
-        if auc_end_s <= auc_start_s:
-            raise ValueError("auc_end_s must be greater than auc_start_s")
+        for signal_type in ['dff', 'zscore']:
+            if signal_type == 'dff':
+                epochs = self.epochs_dff
+            elif signal_type == 'zscore':
+                epochs = self.epochs_z
 
-        n_plot = n_trials if max_trials is None else int(min(max_trials, n_trials))
-        if n_plot <= 0:
-            raise ValueError("max_trials results in zero plotted trials")
+            peri_t = np.asarray(self.peri_t, dtype=float)
+            n_trials, n_timepoints = epochs.shape
 
-        auc_mask = (peri_t >= auc_start_s) & (peri_t <= auc_end_s)
-        if np.sum(auc_mask) < 2:
-            raise ValueError(
-                f"Not enough peri_t points in AUC window [{auc_start_s}, {auc_end_s}] s "
-                f"(found {np.sum(auc_mask)} points)"
+            if len(peri_t) != n_timepoints:
+                raise ValueError(f"peri_t length {len(peri_t)} != epoch length {n_timepoints}")
+            if auc_end_s <= auc_start_s:
+                raise ValueError("auc_end_s must be greater than auc_start_s")
+
+            n_plot = n_trials if max_trials is None else int(min(max_trials, n_trials))
+            if n_plot <= 0:
+                raise ValueError("max_trials results in zero plotted trials")
+
+            auc_mask = (peri_t >= auc_start_s) & (peri_t <= auc_end_s)
+            if np.sum(auc_mask) < 2:
+                raise ValueError(
+                    f"Not enough peri_t points in AUC window [{auc_start_s}, {auc_end_s}] s "
+                    f"(found {np.sum(auc_mask)} points)"
+                )
+
+            fig, axes = plt.subplots(
+                n_plot,
+                1,
+                figsize=(figure_size_peri[0], max(2.0, 1.2 * n_plot)),
+                sharex=True,
+                sharey=True,
             )
+            if n_plot == 1:
+                axes = [axes]
 
-        fig, axes = plt.subplots(
-            n_plot,
-            1,
-            figsize=(figure_size_peri[0], max(2.0, 1.2 * n_plot)),
-            sharex=True,
-            sharey=True,
-        )
-        if n_plot == 1:
-            axes = [axes]
+            for trial_idx, ax in enumerate(axes, start=1):
+                y = epochs[trial_idx - 1, :].astype(float)
 
-        for trial_idx, ax in enumerate(axes, start=1):
-            y = self.epochs_z[trial_idx - 1, :].astype(float)
+                ax.plot(peri_t, y, color=trace_color, lw=trace_linewidth)
 
-            ax.plot(peri_t, y, color=trace_color, lw=trace_linewidth)
+                # Shade AUC region under the curve (relative to 0 baseline)
+                ax.fill_between(
+                    peri_t[auc_mask],
+                    0.0,
+                    y[auc_mask],
+                    color=auc_fill_color,
+                    alpha=auc_fill_alpha,
+                    linewidth=0.0,
+                )
 
-            # Shade AUC region under the curve (relative to 0 baseline)
-            ax.fill_between(
-                peri_t[auc_mask],
-                0.0,
-                y[auc_mask],
-                color=auc_fill_color,
-                alpha=auc_fill_alpha,
-                linewidth=0.0,
+                ax.axvline(0.0, color=color_event_onset, ls="--", lw=0.8, alpha=0.9)
+
+                ax.set_ylabel(f"T{trial_idx}", rotation=0, labelpad=15)
+                ax.grid(alpha=0.25)
+                self._set_ytick_params(ax)
+
+            axes[-1].set_xlabel("Time from event (s)")
+            self._set_xtick_params(axes[-1])
+
+            fig.suptitle(
+                f"Peri-event {signal_type} traces (stacked) with AUC shading [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
+                f"(n={n_plot}/{n_trials} trials)",
+                y=1.02,
             )
+            fig.tight_layout()
 
-            ax.axvline(0.0, color=color_event_onset, ls="--", lw=0.8, alpha=0.9)
-
-            ax.set_ylabel(f"T{trial_idx}", rotation=0, labelpad=15)
-            ax.grid(alpha=0.25)
-            self._set_ytick_params(ax)
-
-        axes[-1].set_xlabel("Time from event (s)")
-        self._set_xtick_params(axes[-1])
-
-        fig.suptitle(
-            f"Peri-event z-score traces (stacked) with AUC shading [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
-            f"(n={n_plot}/{n_trials} trials)",
-            y=1.02,
-        )
-        fig.tight_layout()
-
-        self._finalize_figure(fig, f"peri_event_trials_stacked_auc_{auc_start_s:.1f}_to_{auc_end_s:.1f}s_{self.stem}")
+            self._finalize_figure(fig, f"peri_event_trials_stacked_auc_{signal_type}_{auc_start_s:.1f}_to_{auc_end_s:.1f}s_{self.stem}")
 
     def plot_peri_event_trials(
             self,
@@ -713,93 +725,99 @@ class PhotometryPlotter:
         ValueError
             If peri-event time base is inconsistent with epoch array shape.
         """
-        n_trials, n_timepoints = self.epochs_z.shape
-        if len(self.peri_t) != n_timepoints:
-            raise ValueError(
-                f"peri_t length {len(self.peri_t)} != z-score epoch length {n_timepoints}"
+        for signal_type in ['dff', 'zscore']:
+            if signal_type == 'dff':
+                epochs = self.epochs_dff
+            elif signal_type == 'zscore':
+                epochs = self.epochs_z
+
+            n_trials, n_timepoints = epochs.shape
+            if len(self.peri_t) != n_timepoints:
+                raise ValueError(
+                    f"peri_t length {len(self.peri_t)} != z-score epoch length {n_timepoints}"
+                )
+
+            zscore_long_dataframe = (
+                pd.DataFrame(epochs, index=np.arange(1, n_trials + 1), columns=self.peri_t)
+                .rename_axis(index="trial")
+                .reset_index()
+                .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
+            )
+            zscore_long_dataframe["trial"] = zscore_long_dataframe["trial"].astype(int)
+            zscore_long_dataframe["time_s"] = zscore_long_dataframe["time_s"].astype(float)
+
+            figure, axis = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
+
+            # Diverging palette across trials
+            cmap = mpl.cm.get_cmap(colormap_name, n_trials if n_trials > 1 else 2)
+            norm = mpl.colors.Normalize(vmin=1, vmax=max(1, n_trials))
+
+            trial_to_color = {
+                trial_idx: cmap(norm(trial_idx))
+                for trial_idx in range(1, n_trials + 1)
+            }
+
+            sns.lineplot(
+                data=zscore_long_dataframe,
+                x="time_s",
+                y="signal_value",
+                hue="trial",
+                units="trial",
+                estimator=None,
+                palette=trial_to_color,
+                linewidth=linewidth,
+                alpha=line_alpha,
+                legend=(n_trials <= legend_max_trials),
+                ax=axis,
             )
 
-        zscore_long_dataframe = (
-            pd.DataFrame(self.epochs_z, index=np.arange(1, n_trials + 1), columns=self.peri_t)
-            .rename_axis(index="trial")
-            .reset_index()
-            .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
-        )
-        zscore_long_dataframe["trial"] = zscore_long_dataframe["trial"].astype(int)
-        zscore_long_dataframe["time_s"] = zscore_long_dataframe["time_s"].astype(float)
-
-        figure, axis = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
-
-        # Diverging palette across trials
-        cmap = mpl.cm.get_cmap(colormap_name, n_trials if n_trials > 1 else 2)
-        norm = mpl.colors.Normalize(vmin=1, vmax=max(1, n_trials))
-
-        trial_to_color = {
-            trial_idx: cmap(norm(trial_idx))
-            for trial_idx in range(1, n_trials + 1)
-        }
-
-        sns.lineplot(
-            data=zscore_long_dataframe,
-            x="time_s",
-            y="signal_value",
-            hue="trial",
-            units="trial",
-            estimator=None,
-            palette=trial_to_color,
-            linewidth=linewidth,
-            alpha=line_alpha,
-            legend=(n_trials <= legend_max_trials),
-            ax=axis,
-        )
-
-        baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
-        axis.axvspan(
-            -baseline_window_s,
-            0,
-            color="grey",
-            alpha=0.15,
-            label=f"Baseline window ({baseline_window_s:.1f} s)",
-            zorder=0,
-        )
-        axis.axvline(0, color=color_event_onset, ls="--", lw=0.8, label="Event onset")
-
-        axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
-        axis.set_xlabel("Time from event (s)")
-        axis.set_ylabel("Z-score")
-        axis.set_title(f"Peri-event individual trials — Z-score (n={n_trials} trials)")
-        axis.grid(alpha=0.3)
-        self._set_xtick_params(axis)
-        self._set_ytick_params(axis)
-
-        # If legend is shown, make it compact and move it outside
-        if n_trials <= legend_max_trials:
-            axis.legend(
-                title="Trial",
-                loc="upper left",
-                bbox_to_anchor=(1.02, 1.0),
-                borderaxespad=0.0,
-                frameon=False,
+            baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
+            axis.axvspan(
+                -baseline_window_s,
+                0,
+                color="grey",
+                alpha=0.15,
+                label=f"Baseline window ({baseline_window_s:.1f} s)",
+                zorder=0,
             )
-        else:
-            # Keep only baseline/event labels in a small legend
-            axis.legend(
-                loc="upper right",
-                frameon=False,
-            )
+            axis.axvline(0, color=color_event_onset, ls="--", lw=0.8, label="Event onset")
 
-        # Colorbar gives a clean mapping from trial index -> color
-        if show_colorbar and n_trials > 1:
-            sm = ScalarMappable(norm=norm, cmap=cmap)
-            sm.set_array([])
-            colorbar = figure.colorbar(sm, ax=axis, pad=0.02)
-            colorbar.set_label("Trial index")
-            # Optionally reduce ticks density
-            if n_trials > 12:
-                colorbar.set_ticks(np.linspace(1, n_trials, 6, dtype=int))
+            axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
+            axis.set_xlabel("Time from event (s)")
+            axis.set_ylabel("Z-score")
+            axis.set_title(f"Peri-event individual trials — Z-score (n={n_trials} trials)")
+            axis.grid(alpha=0.3)
+            self._set_xtick_params(axis)
+            self._set_ytick_params(axis)
 
-        figure.tight_layout()
-        self._finalize_figure(figure, f"peri_event_trials_zscore_{self.stem}")
+            # If legend is shown, make it compact and move it outside
+            if n_trials <= legend_max_trials:
+                axis.legend(
+                    title="Trial",
+                    loc="upper left",
+                    bbox_to_anchor=(1.02, 1.0),
+                    borderaxespad=0.0,
+                    frameon=False,
+                )
+            else:
+                # Keep only baseline/event labels in a small legend
+                axis.legend(
+                    loc="upper right",
+                    frameon=False,
+                )
+
+            # Colorbar gives a clean mapping from trial index -> color
+            if show_colorbar and n_trials > 1:
+                sm = ScalarMappable(norm=norm, cmap=cmap)
+                sm.set_array([])
+                colorbar = figure.colorbar(sm, ax=axis, pad=0.02)
+                colorbar.set_label("Trial index")
+                # Optionally reduce ticks density
+                if n_trials > 12:
+                    colorbar.set_ticks(np.linspace(1, n_trials, 6, dtype=int))
+
+            figure.tight_layout()
+            self._finalize_figure(figure, f"peri_event_trials_{signal_type}_{self.stem}")
 
     def plot_peri_event_average(self) -> None:
         """
@@ -811,129 +829,142 @@ class PhotometryPlotter:
         the amount of pre-trigger baseline used for epoch-local ΔF/F computation.
         """
 
-        n_trials, n_timepoints = self.epochs_z.shape
-        if len(self.peri_t) != n_timepoints:
-            raise ValueError(
-                f"peri_t length {len(self.peri_t)} != z-score epoch length {n_timepoints}"
+        for signal_type in ['dff', 'zscore']:
+            if signal_type == 'dff':
+                epochs = self.epochs_dff
+            elif signal_type == 'zscore':
+                epochs = self.epochs_z
+
+            n_trials, n_timepoints = epochs.shape
+            if len(self.peri_t) != n_timepoints:
+                raise ValueError(
+                    f"peri_t length {len(self.peri_t)} != z-score epoch length {n_timepoints}"
+                )
+
+            zscore_long_dataframe = (
+                pd.DataFrame(epochs, index=np.arange(1, n_trials + 1), columns=self.peri_t)
+                .rename_axis(index="trial")
+                .reset_index()
+                .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
+            )
+            zscore_long_dataframe["trial"] = zscore_long_dataframe["trial"].astype(int)
+            zscore_long_dataframe["time_s"] = zscore_long_dataframe["time_s"].astype(float)
+
+            figure, axis = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
+
+            sns.lineplot(
+                data=zscore_long_dataframe,
+                x="time_s",
+                y="signal_value",
+                estimator="mean",
+                errorbar="se",
+                color=color_zscore,
+                linewidth=lw_peri_mean,
+                ax=axis,
+                label=f"Mean {signal_type}",
             )
 
-        zscore_long_dataframe = (
-            pd.DataFrame(self.epochs_z, index=np.arange(1, n_trials + 1), columns=self.peri_t)
-            .rename_axis(index="trial")
-            .reset_index()
-            .melt(id_vars="trial", var_name="time_s", value_name="signal_value")
-        )
-        zscore_long_dataframe["trial"] = zscore_long_dataframe["trial"].astype(int)
-        zscore_long_dataframe["time_s"] = zscore_long_dataframe["time_s"].astype(float)
+            baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
+            axis.axvspan(
+                -baseline_window_s,
+                0,
+                color="grey",
+                alpha=0.15,
+                label=f"Baseline window ({baseline_window_s:.1f} s)",
+            )
+            axis.axvline(
+                0,
+                color=color_event_onset,
+                ls="--",
+                lw=0.8,
+                label="Event onset",
+            )
 
-        figure, axis = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True)
+            axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
+            axis.set_xlabel("Time from event (s)")
+            axis.set_ylabel(signal_type)
+            axis.set_title(f"Peri-event average — {signal_type} (n={n_trials} trials)")
+            axis.grid(alpha=0.3)
+            self._set_xtick_params(axis)
+            self._set_ytick_params(axis)
+            axis.legend()
 
-        sns.lineplot(
-            data=zscore_long_dataframe,
-            x="time_s",
-            y="signal_value",
-            estimator="mean",
-            errorbar="se",
-            color=color_zscore,
-            linewidth=lw_peri_mean,
-            ax=axis,
-            label="Mean Z-score",
-        )
-
-        baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
-        axis.axvspan(
-            -baseline_window_s,
-            0,
-            color="grey",
-            alpha=0.15,
-            label=f"Baseline window ({baseline_window_s:.1f} s)",
-        )
-        axis.axvline(
-            0,
-            color=color_event_onset,
-            ls="--",
-            lw=0.8,
-            label="Event onset",
-        )
-
-        axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
-        axis.set_xlabel("Time from event (s)")
-        axis.set_ylabel("Z-score")
-        axis.set_title(f"Peri-event average — Z-score (n={n_trials} trials)")
-        axis.grid(alpha=0.3)
-        self._set_xtick_params(axis)
-        self._set_ytick_params(axis)
-        axis.legend()
-
-        figure.tight_layout()
-        self._finalize_figure(figure, f"peri_event_average_zscore_{self.stem}")
+            figure.tight_layout()
+            self._finalize_figure(figure, f"peri_event_average_{signal_type}_{self.stem}")
 
     def plot_peri_event_heatmaps(self) -> None:
         """
         Plot peri-event heatmaps for ΔF/F and z-score across trials.
         """
-        n_trials, n_timepoints = self.epochs_z.shape
-        if len(self.peri_t) != n_timepoints:
-            raise ValueError(f"peri_t length {len(self.peri_t)} != n_timepoints {n_timepoints}")
 
-        trial_labels = self._get_heatmap_trial_labels(n_trials)
+        for signal_type in ['dff', 'zscore']:
+            if signal_type == 'dff':
+                epochs = self.epochs_dff
+            elif signal_type == 'zscore':
+                epochs = self.epochs_z
 
-        fig, axes = plt.subplots(2, 1, figsize=heatmap_figsize, sharex=True)
+            n_trials, n_timepoints = epochs.shape
+            if len(self.peri_t) != n_timepoints:
+                raise ValueError(f"peri_t length {len(self.peri_t)} != n_timepoints {n_timepoints}")
 
-        heatmap_specs = [
-            (self.epochs_z, "Z-score", heatmap_cmap_z, heatmap_vmin_z, heatmap_vmax_z),
-        ]
+            trial_labels = self._get_heatmap_trial_labels(n_trials)
 
-        for ax, (data, label, cmap, vmin, vmax) in zip(axes, heatmap_specs):
-            image = ax.imshow(
-                data,
-                aspect="auto",
-                interpolation="nearest",
-                origin="lower",
-                extent=[self.peri_t[0], self.peri_t[-1], 1, n_trials],
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax,
-            )
+            fig, ax = plt.subplots(1, 1, figsize=heatmap_figsize, sharex=True)
 
+            heatmap_specs = [
+                (epochs, signal_type, heatmap_cmap_z, heatmap_vmin_z, heatmap_vmax_z),
+            ]
 
-            ax.set_xlim(self.peri_t[0], self.peri_t[-1])
-            ax.xaxis.set_major_locator(mticker.MultipleLocator(heatmap_xtick_major))
-            ax.xaxis.set_minor_locator(mticker.MultipleLocator(heatmap_xtick_minor))
-
-            if heatmap_show_all_ylabels:
-                yticks = np.arange(1, n_trials + 1, dtype=float)
-                yticklabels = trial_labels
-            else:
-                yticks = np.arange(1, n_trials + 1, heatmap_ytick_major_step, dtype=float)
-                yticklabels = [trial_labels[int(i) - 1] for i in yticks]
-
-            ax.set_yticks(yticks, minor=False)
-            ax.set_yticklabels(yticklabels)
-
-            if n_trials > 1 and heatmap_ytick_minor_step > 0:
-                minor_ticks = np.arange(1.5, n_trials, heatmap_ytick_minor_step, dtype=float)
-                ax.set_yticks(minor_ticks, minor=True)
-                ax.grid(
-                    which="minor",
-                    axis="y",
-                    color="w",
-                    linestyle="-",
-                    linewidth=0.3,
-                    alpha=1.0,
+            for data, label, cmap, vmin, vmax in heatmap_specs:
+                image = ax.imshow(
+                    data,
+                    aspect="auto",
+                    interpolation="nearest",
+                    origin="lower",
+                    extent=[self.peri_t[0], self.peri_t[-1], 1, n_trials],
+                    cmap=cmap,
+                    vmin=vmin,
+                    vmax=vmax,
                 )
 
-            self._set_xtick_params(ax)
-            self._set_ytick_params(ax)
 
-            ax.axvline(0, color=color_event_onset, ls="--", lw=0.8)
-            ax.set_ylabel("Trial")
-            ax.set_title(f"Peri-event heatmap — {label} (n={n_trials} trials)")
-            fig.colorbar(image, ax=ax, label=label)
+                ax.set_xlim(self.peri_t[0], self.peri_t[-1])
+                ax.xaxis.set_major_locator(mticker.MultipleLocator(heatmap_xtick_major))
+                ax.xaxis.set_minor_locator(mticker.MultipleLocator(heatmap_xtick_minor))
 
-        axes[-1].set_xlabel("Time from event (s)")
-        fig.tight_layout()
-        self._finalize_figure(fig, f"peri_event_heatmaps_{self.stem}")
+                if heatmap_show_all_ylabels:
+                    yticks = np.arange(1, n_trials + 1, dtype=float)
+                    yticklabels = trial_labels
+                else:
+                    yticks = np.arange(1, n_trials + 1, heatmap_ytick_major_step, dtype=float)
+                    yticklabels = [trial_labels[int(i) - 1] for i in yticks]
+
+                ax.set_yticks(yticks, minor=False)
+                ax.set_yticklabels(yticklabels)
+
+                if n_trials > 1 and heatmap_ytick_minor_step > 0:
+                    minor_ticks = np.arange(1.5, n_trials, heatmap_ytick_minor_step, dtype=float)
+                    ax.set_yticks(minor_ticks, minor=True)
+                    ax.grid(
+                        which="minor",
+                        axis="y",
+                        color="w",
+                        linestyle="-",
+                        linewidth=0.3,
+                        alpha=1.0,
+                    )
+
+                self._set_xtick_params(ax)
+                self._set_ytick_params(ax)
+
+                ax.axvline(0, color=color_event_onset, ls="--", lw=0.8)
+                ax.set_ylabel("Trial")
+                ax.set_title(f"Peri-event heatmap — {label} (n={n_trials} trials)")
+                fig.colorbar(image, ax=ax, label=label)
+
+            ax.set_xlabel("Time from event (s)")
+            fig.tight_layout()
+            self._finalize_figure(fig, f"peri_event_heatmaps_{signal_type}_{self.stem}")
 
     def run_all(self) -> None:
         """

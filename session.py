@@ -31,7 +31,7 @@ from epoching import EventEpochExtractor
 from preprocessing import extract_session_raw_data
 from event_sorting import process_ttl_events
 from signal_processing import preprocess_photometry_dff_and_zscore, \
-    extract_epoched_data, select_events_from_params
+    extract_epoched_data, select_events_from_params, preprocess_photometry_multichannel_dff_and_zscore
 from plotting import PhotometryPlotter
 
 
@@ -170,80 +170,71 @@ class PhotometrySession:
 
         time_s = self.df_clean["TimeStamp"].to_numpy(dtype=float) / 1000.0
 
-        # Select event times from the requested event table
-        self.event_times_s = self.event_tables['cs_onsets']
+        if self.run_preprocessing == 2:
+            channels = ['CH1', 'CH2']
+        else:
+            channels = ['CH1']
 
-        n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
-        n_post = int(params.time_post_event_s * params.sample_rate_hz)
+        for channel in channels:
+            self.preprocessed_signals_channel = self.preprocessed_signals[channel]
+            for timing in ['cs_onsets', 'cs_offsets', 'freezing_onsets', 'freezing_offsets', 'shock']:
 
-        # Epoch just the requested signal (zscore)
-        epochs_by_signal = EventEpochExtractor.extract_epochs_for_signals(
-            time_s=time_s,
-            event_times_s=self.event_times_s,
-            preprocessed_signals={'dff': self.preprocessed_signals['dff'], 'zscore': self.preprocessed_signals['zscore']},
-            n_pre=n_pre,
-            n_post=n_post,
-            extract_epoched_data_callable=extract_epoched_data,
-        )
-        dt_s = float(np.median(np.diff(time_s)))
-        self.peri_t = (np.arange(-n_pre, n_post, dtype=float) * dt_s)
+                if timing in self.event_tables.keys():
+                    self.event_times_s = self.event_tables[timing]
+                    print('Epoching ', timing, self.event_times_s, self.event_times_s)
 
-        self.epochs_z = epochs_by_signal['dff']
-        plotter = PhotometryPlotter(
-            df_clean=self.df_clean,
-            dff_fitted=self.preprocessed_signals['dff'],
-            zscore=self.preprocessed_signals['zscore'],
-            epochs_z=self.epochs_z,
-            peri_t=self.peri_t,
-            stem=session_stem,
-            event_times_s=self.event_times_s,
-            t_zero_s=self.t_zero_s,
-            filtered_events=self.events_to_use,
-            figure_output_directory=self.output_directory,
-            peri_event_plot_mode="trials"
-        )
+                    if self.event_times_s is not None:
+                        n_pre = int(params.time_pre_event_s * params.sample_rate_hz)
+                        n_post = int(params.time_post_event_s * params.sample_rate_hz)
 
-        if self.session_name == "Recall":
-            analyzer = SessionBootstrapAUCAnalyzer(
-                session=self,
-                event_times_s=self.event_tables['cs_onsets'],
-                event_name="CS onset",
-                baseline_window_s=2.0,
-                auc_window_s=(0.0, 2.0),
-                n_mocks=5000,
-                random_seed=0,
-            )
+                        # Epoch just the requested signal (zscore)
+                        epochs_by_signal = EventEpochExtractor.extract_epochs_for_signals(
+                            time_s=time_s,
+                            event_times_s=self.event_times_s,
+                            preprocessed_signals={'dff': self.preprocessed_signals_channel['dff'], 'zscore': self.preprocessed_signals_channel['zscore']},
+                            n_pre=n_pre,
+                            n_post=n_post,
+                            extract_epoched_data_callable=extract_epoched_data,
+                        )
+                        dt_s = float(np.median(np.diff(time_s)))
+                        self.peri_t = (np.arange(-n_pre, n_post, dtype=float) * dt_s)
 
-            fig_z = analyzer.plot_null_with_all_event_axvlines("zscore", bins=60, tail_mode="right", alpha_level=0.05)
-            fig_d = analyzer.plot_null_with_all_event_axvlines("dff", bins=60, tail_mode="right", alpha_level=0.05)
-        elif self.session_name == "Cond":
-            analyzer = SessionBootstrapAUCAnalyzer(
-                session=self,
-                event_times_s=self.event_tables['cs_onsets'],
-                event_name="CS onset",
-                baseline_window_s=2.0,
-                auc_window_s=(0.0, 2.0),
-                n_mocks=5000,
-                random_seed=0,
-            )
+                        self.epochs_z = epochs_by_signal['zscore']
+                        self.epochs_dff = epochs_by_signal['dff']
 
-            fig_z = analyzer.plot_null_with_all_event_axvlines("zscore", bins=60, tail_mode="right", alpha_level=0.05)
-            fig_d = analyzer.plot_null_with_all_event_axvlines("dff", bins=60, tail_mode="right", alpha_level=0.05)
+                        plotter = PhotometryPlotter(
+                            channel_name=channel,
+                            df_clean=self.df_clean,
+                            event_name=timing,
+                            dff_fitted=self.preprocessed_signals_channel['dff'],
+                            zscore=self.preprocessed_signals_channel['zscore'],
+                            epochs_dff=self.epochs_dff,
+                            epochs_z=self.epochs_z,
+                            peri_t=self.peri_t,
+                            stem=session_stem,
+                            event_times_s=self.event_times_s,
+                            t_zero_s=self.t_zero_s,
+                            filtered_events=self.events_to_use,
+                            figure_output_directory=self.output_directory,
+                            peri_event_plot_mode="trials"
+                        )
 
-            analyzer = SessionBootstrapAUCAnalyzer(
-                session=self,
-                event_times_s=self.event_tables['shock'],
-                event_name="shock",
-                baseline_window_s=2.0,
-                auc_window_s=(0.0, 2.0),
-                n_mocks=5000,
-                random_seed=0,
-            )
 
-            fig_z = analyzer.plot_null_with_all_event_axvlines("zscore", bins=60, tail_mode="right", alpha_level=0.05)
-            fig_d = analyzer.plot_null_with_all_event_axvlines("dff", bins=60, tail_mode="right", alpha_level=0.05)
+                        analyzer = SessionBootstrapAUCAnalyzer(
+                            session=self,
+                            channel=channel,
+                            event_times_s=self.event_times_s,
+                            event_name=timing,
+                            baseline_window_s=2.0,
+                            auc_window_s=(0.0, 2.0),
+                            n_mocks=5000,
+                            random_seed=0,
+                        )
 
-        plotter.run_all()
+                        fig_z = analyzer.plot_null_with_all_event_axvlines("zscore", bins=60, tail_mode="right", alpha_level=0.05)
+                        fig_d = analyzer.plot_null_with_all_event_axvlines("dff", bins=60, tail_mode="right", alpha_level=0.05)
+
+                        plotter.run_all()
 
     def session_exists(self) -> bool:
         """
@@ -315,17 +306,22 @@ class PhotometrySession:
 
         self.df_clean = extract_session_raw_data(str(self.raw_data_path), self.output_directory)
 
+        if 'CH2' in self.df_clean.columns:
+            self.n_channels = 2
+        else:
+            self.n_channels = 1
+
         self.event_tables = process_ttl_events(self.df_clean, self.output_directory)
 
-        self.preprocessed_signals = preprocess_photometry_dff_and_zscore(
+        self.preprocessed_signals = preprocess_photometry_multichannel_dff_and_zscore(
             df_clean=self.df_clean,
-            calcium_channel='CH1-470',
-            reference_channel='CH1-410',
+            calcium_wavelength_nm=470,
+            reference_wavelength_nm=410,
             baseline_interval_samples=None,
-            control_source="410",  # "410" or "baseline"
-            apply_baseline_correction=False,  # True or False
-            enable_smoothing=False,
-            smoothing_window_length=11,
+            control_source="410",
+            apply_baseline_correction=True,
+            enable_smoothing=True,
+            smoothing_window_length=15,
             smoothing_polyorder=3,
             background_calcium=None,
             background_reference=None,

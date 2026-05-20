@@ -42,7 +42,7 @@ baseline_samples = 1000
 event_gap_ms = 5000
 
 time_pre_event_s = 10
-time_post_event_s = 40
+time_post_event_s = 15
 
 selected_clusters = list(range(0, 20)) #SELECTED_CLUSTERS = list(range(5, 15)), select Clusters 5-14
 
@@ -55,13 +55,13 @@ USE_MOTION_CORR = True"""
 
 # === FIGURE CORE ===
 figure_dpi = 300
-figure_format = "png"
+figure_format = "svg"
 figure_size_trace = (10, 6)
 figure_size_peri = (10, 6)
 
-save_figures = False
-preview_figures = True
-run_single_animal_plots = True
+save_figures = True
+preview_figures = False
+run_single_animal_plots = False
 #FIGURES_DIR = OUTPUT_DIR / "figures"
 #FIGURES_DIR.mkdir(exist_ok=True, parents=True)
 

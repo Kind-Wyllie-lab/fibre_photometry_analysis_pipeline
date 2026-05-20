@@ -218,7 +218,6 @@ def build_freezing_behavior_profile_table(
     session_column_name: str = "session_name",
     pre_cs_duration_s: float = 120.0,
     post_last_cs_duration_s: float = 30.0,
-    n_cs: int = 12,
 ) -> pd.DataFrame:
     """
     Build a table of freezing ratios per session bout for all animals with freezing scored.
@@ -245,8 +244,6 @@ def build_freezing_behavior_profile_table(
         Pre-CS interval duration.
     post_last_cs_duration_s : float, default=30.0
         Post-CS12 interval duration.
-    n_cs : int, default=12
-        Number of CS bouts to consider.
 
     Returns
     -------
@@ -270,6 +267,10 @@ def build_freezing_behavior_profile_table(
     rows = []
 
     for sess in completed_sessions:
+        if sess.session_name == 'Recall':
+            n_cs = 12
+        elif sess.session_name == 'Cond':
+            n_cs = 6
         animal = str(getattr(sess, "animal"))
         sess_name = str(getattr(sess, "session_name"))
 

@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy import stats
 
+from params import save_figures, figure_format, figure_dpi, preview_figures, sessions
 
 SignalName = Literal["dff", "zscore"]
 
@@ -56,9 +57,9 @@ class SessionBootstrapAUCAnalyzer:
     """
 
     session: object
+    channel: str
     event_times_s: np.ndarray
     event_name: str
-
     baseline_window_s: float = 2.0
     auc_window_s: tuple[float, float] = (0.0, 2.0)
     n_mocks: int = 5000
@@ -84,7 +85,7 @@ class SessionBootstrapAUCAnalyzer:
         if not hasattr(self.session, "preprocessed_signals"):
             raise ValueError("session must have preprocessed_signals dict")
         for key in ("dff", "zscore"):
-            if key not in self.session.preprocessed_signals:
+            if key not in self.session.preprocessed_signals_channel:
                 raise ValueError(f"session.preprocessed_signals missing {key!r}")
 
         self.epoch_pre_s = float(self.baseline_window_s)
@@ -206,7 +207,7 @@ class SessionBootstrapAUCAnalyzer:
         auc_null : numpy.ndarray
             Null AUC values computed from mock times (length ~ n_mocks, may be smaller if some epochs invalid).
         """
-        signal = np.asarray(self.session.preprocessed_signals[signal_name], dtype=float)
+        signal = np.asarray(self.session.preprocessed_signals_channel[signal_name], dtype=float)
         if signal.size != self.time_s.size:
             raise ValueError(f"{signal_name} trace length != time vector length")
 
@@ -344,4 +345,33 @@ class SessionBootstrapAUCAnalyzer:
         ax.grid(alpha=0.25)
         ax.legend(frameon=False)
         fig.tight_layout()
+
+        output_stem = f"AUC_baselined_{signal_name}_bootstrap_{self.event_name}.{figure_format}"
+        session_name = sessions[0]
+        if session_name is not None:
+            output_stem += f"_{session_name}"
+
+        self._finalize_figure(fig, output_stem)
         return fig
+
+    def _finalize_figure(self, figure: plt.Figure, filename_stem: str) -> None:
+        """
+        Save and/or preview a figure according to project configuration.
+
+        Parameters
+        ----------
+        figure : matplotlib.figure.Figure
+            Figure to finalize.
+        filename_stem : str
+            Output file stem.
+        """
+        self.output_dir = self.session.output_directory
+        if save_figures:
+            output_path = self.output_dir / f"{filename_stem}.{figure_format}"
+            figure.savefig(output_path, dpi=figure_dpi, format=figure_format, bbox_inches="tight")
+            print(f"Saved: {output_path}")
+
+        if preview_figures:
+            plt.show()
+        else:
+            plt.close(figure)
