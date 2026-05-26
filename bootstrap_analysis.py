@@ -254,30 +254,27 @@ class SessionBootstrapAUCAnalyzer:
             kde: bool = False,
     ) -> plt.Figure:
         """
-        Plot a single null distribution and overlay one axvline per real event AUC.
+        Plots the null distribution of AUC (Area Under Curve) values for a specified signal,
+        along with vertical lines representing each event and quantile decision rules. This
+        function is useful for visualizing the distribution of AUC values over randomized
+        samples (null distribution) alongside the real event-related AUC values.
 
-        The axvline is green if significant, else black.
-        Title reports responsive/total.
+        The function includes additional configurations, such as KDE (Kernel Density Estimate)
+        plot overlay and selection of tail-mode for significance testing, while calculating
+        responsive and non-responsive events based on the AUC thresholds.
 
-        Parameters
-        ----------
-        signal_name : {"dff","zscore"}
-            Signal to analyze.
-        bins : int, default=60
-            Histogram bin count.
-        tail_mode : {"two_sided","right"}, default="two_sided"
-            - "two_sided": significance if AUC < q(alpha/2) OR AUC > q(1-alpha/2)
-            - "right": significance if AUC > q(1-alpha)
-        alpha_level : float, default=0.05
-            Significance level.
-        kde : bool, default=False
-            If True, overlay seaborn KDE for the null.
-
-        Returns
-        -------
-        matplotlib.figure.Figure
-            Figure object.
-        """
+        :param signal_name: The specific signal for which to compute and display the AUC
+            null distribution.
+        :param bins: The number of bins for the histogram representation of the null
+            distribution.
+        :param tail_mode: The approach to significance testing. Options include
+            "two_sided" for testing both tails of the distribution or "right" for testing
+            only the upper tail.
+        :param alpha_level: The significance level used for defining the quantiles
+            of the null distribution. Must be a value within the interval (0, 1).
+        :param kde: Boolean flag indicating whether to overlay a kernel density estimate
+            (KDE) plot on the null distribution.
+        :return: A Matplotlib Figure object containing the plotted distribution and"""
         if not (0.0 < alpha_level < 1.0):
             raise ValueError("alpha_level must be in (0, 1)")
 
@@ -306,9 +303,9 @@ class SessionBootstrapAUCAnalyzer:
         n_total = int(auc_real.size)
 
         # --- null histogram (density) ---
-        sns.histplot(auc_null, bins=bins, stat="density", color="0.25", alpha=0.35, ax=ax)
+        sns.histplot(auc_null, bins=bins, stat="density", color="0.25" , alpha=0.35, ax=ax)
         if kde:
-            sns.kdeplot(auc_null, color="0.15", lw=1.2, ax=ax)
+            sns.kdeplot(auc_null, color="black", lw=1.2, ax=ax)
 
         mu, sigma = float(np.mean(auc_null)), float(np.std(auc_null))
         xgrid = np.linspace(np.min(auc_null), np.max(auc_null), 500)
