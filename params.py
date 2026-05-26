@@ -20,9 +20,9 @@
 from pathlib import Path
 from typing import Literal
 
-base_path = Path(r"/media/prignane/data_fast/Fibre_photmetry")
+base_path = Path(r"E:\Fibre_photmetry")
 
-sessions =  ["Recall"]
+sessions =  ["Cond"]
 
 def animal_output_dirs(animal_num: str, session:str):
     """Return (figures_dir, csv_dir). Create if missing."""
@@ -60,7 +60,7 @@ figure_size_trace = (10, 6)
 figure_size_peri = (10, 6)
 
 save_figures = True
-preview_figures = True
+preview_figures = False
 run_single_animal_plots = False
 #FIGURES_DIR = OUTPUT_DIR / "figures"
 #FIGURES_DIR.mkdir(exist_ok=True, parents=True)
