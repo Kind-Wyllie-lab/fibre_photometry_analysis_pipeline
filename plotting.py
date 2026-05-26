@@ -20,17 +20,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence, Literal
-import matplotlib as mpl
-from matplotlib.cm import ScalarMappable
+from typing import Optional, Sequence, Literal, Any
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from matplotlib import colors as mcolors
-
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib import colors as mcolors
+from matplotlib.cm import ScalarMappable
 
 from params import (
     save_figures,
@@ -44,13 +43,11 @@ from params import (
     color_410_nm,
     color_dff,
     color_zscore,
-    color_peri_mean,
     color_event_onset,
     lw_trace,
     lw_peri_mean,
     lw_event_marker,
     alpha_event_lines,
-    alpha_sem_fill,
     xtick_fontsize,
     xtick_direction,
     xtick_width_major,
@@ -65,10 +62,7 @@ from params import (
     ytick_width_minor,
     ytick_length_minor,
     ytick_nbins,
-    heatmap_cmap_dff,
     heatmap_cmap_z,
-    heatmap_vmin_dff,
-    heatmap_vmax_dff,
     heatmap_vmin_z,
     heatmap_vmax_z,
     heatmap_xtick_major,
@@ -213,13 +207,13 @@ class PhotometryPlotter:
         if not self.preview_figures_enabled:
             plt.close(fig)
 
+    @staticmethod
     def _build_progressive_lightness_palette(
-            self,
             base_color: str,
             n_colors: int,
             min_lightness_mix: float = 0.0,
             max_lightness_mix: float = 0.75,
-    ) -> list[tuple[float, float, float]]:
+    ) -> list[tuple[tuple[Any, ...], ...]] | list[Any] | list[tuple]:
         """
         Generate a sequential palette from dark to light using a base color.
 
@@ -255,7 +249,8 @@ class PhotometryPlotter:
         ]
         return palette
 
-    def _set_xtick_params(self, ax: plt.Axes) -> None:
+    @staticmethod
+    def _set_xtick_params(ax: plt.Axes) -> None:
         """
         Apply project-wide x-axis tick formatting.
 
@@ -287,7 +282,8 @@ class PhotometryPlotter:
         )
         ax.xaxis.set_major_locator(plt.MaxNLocator(xtick_nbins))
 
-    def _set_ytick_params(self, ax: plt.Axes) -> None:
+    @staticmethod
+    def _set_ytick_params(ax: plt.Axes) -> None:
         """
         Apply project-wide y-axis tick formatting.
 
@@ -392,7 +388,7 @@ class PhotometryPlotter:
         axes[0].plot(self.time_s, y_470, color=color_470_nm, lw=lw_trace, label="470nm (calcium)")
         self._autoscale_y_to_signal(axes[0], y_470)
         axes[0].set_ylabel("470nm (AU)")
-        axes[0].set_title(f"Full-session raw fluorescence ({self.stem})")
+        axes[0].set_title(f"Full-session raw fluorescence ({self.stem}_{self.event_name}_{self.channel_name})")
         # axes[0].grid(alpha=0.15)
         axes[0].legend(loc="upper right")
         self._set_ytick_params(axes[0])
@@ -459,7 +455,7 @@ class PhotometryPlotter:
             else "t=0 at recording start"
         )
         axes[0].set_title(
-            f"Full session — motion-corrected signal ({self.stem}) | {n_events} events | {zero_label}"
+            f"Full session — motion-corrected signal ({self.stem}_{self.event_name}_{self.channel_name}) | {n_events} events | {zero_label}"
         )
         axes[-1].set_xlabel("Time from first TTL pulse (s)")
         self._set_xtick_params(axes[-1])
@@ -564,6 +560,7 @@ class PhotometryPlotter:
             ax.set_title(
                 f"Per-trial AUC of {signal_type} [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
                 f"(n={n_trials} trials)"
+                f" | {self.stem}_{self.event_name}_{self.channel_name}"
             )
             ax.grid(alpha=0.3)
 
@@ -687,7 +684,8 @@ class PhotometryPlotter:
 
             fig.suptitle(
                 f"Peri-event {signal_type} traces (stacked) with AUC shading [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
-                f"(n={n_plot}/{n_trials} trials)",
+                f"(n={n_plot}/{n_trials} trials)"
+                f" | {self.stem}_{self.event_name}_{self.channel_name}",
                 y=1.02,
             )
             fig.tight_layout()
@@ -785,7 +783,8 @@ class PhotometryPlotter:
             axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
             axis.set_xlabel("Time from event (s)")
             axis.set_ylabel("Z-score")
-            axis.set_title(f"Peri-event individual trials — Z-score (n={n_trials} trials)")
+            axis.set_title(f"Peri-event individual trials — Z-score (n={n_trials} trials)"
+            f" | {self.stem}_{self.event_name}_{self.channel_name}")
             axis.grid(alpha=0.3)
             self._set_xtick_params(axis)
             self._set_ytick_params(axis)
@@ -883,7 +882,8 @@ class PhotometryPlotter:
             axis.set_xlim(float(self.peri_t[0]), float(self.peri_t[-1]))
             axis.set_xlabel("Time from event (s)")
             axis.set_ylabel(signal_type)
-            axis.set_title(f"Peri-event average — {signal_type} (n={n_trials} trials)")
+            axis.set_title(f"Peri-event average — {signal_type} (n={n_trials} trials)"
+            f" | {self.stem}_{self.event_name}_{self.channel_name}")
             axis.grid(alpha=0.3)
             self._set_xtick_params(axis)
             self._set_ytick_params(axis)
@@ -959,7 +959,8 @@ class PhotometryPlotter:
 
                 ax.axvline(0, color=color_event_onset, ls="--", lw=0.8)
                 ax.set_ylabel("Trial")
-                ax.set_title(f"Peri-event heatmap — {label} (n={n_trials} trials)")
+                ax.set_title(f"Peri-event heatmap — {label} (n={n_trials} trials)"
+                             f" | {self.stem}_{self.event_name}_{self.channel_name}")
                 fig.colorbar(image, ax=ax, label=label)
 
             ax.set_xlabel("Time from event (s)")
@@ -1494,6 +1495,8 @@ def plot_modulation_index_wt_vs_het(
     ax.set_title("Modulation index (wt vs het)")
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
+    ax = plot_modulation_index_wt_vs_het(mi_df)
+    plt.show()
 
     if stats_enabled:
         x = df_plot.loc[df_plot[genotype_col] == "wt", value_col].to_numpy(dtype=float)
