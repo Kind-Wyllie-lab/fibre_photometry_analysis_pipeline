@@ -90,7 +90,7 @@ class PhotometryPipeline:
         if self.animal_names is not None:
             return list(self.animal_names)
 
-        xls_animals_matadata_path = self.base_directory / 'animals_metadata.ods'
+        xls_animals_matadata_path = self.base_directory / 'animals_metadata.xlsx'
         xls_animals_matadata = pd.read_excel(xls_animals_matadata_path).dropna()
 
         return xls_animals_matadata['animal_name'].values.tolist()
@@ -261,8 +261,11 @@ class PhotometryPipeline:
             Completed session objects.
         """
         self.results = []
+        animals_to_include = self.get_animal_names()
 
-        for animal in self.get_animal_names():
+        animals_to_include = [i for i in animals_to_include if i not in ['Rat_4987', 'Rat_4988', 'Rat_4990', 'Rat_391', 'Rat_5162']]
+
+        for animal in animals_to_include:
             print(animal)
             for session_name in self.session_names:
                 print(session_name)
