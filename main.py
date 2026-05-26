@@ -69,7 +69,7 @@ def run_pipeline():
 if __name__ == "__main__":
     completed_pipeline = run_pipeline()
 
-    event_types = ['freezing_onsets', 'freezing_offsets', "cs_onsets", "shock", "cs_offsets",]  #
+    event_types = ["freezing_onsets", "freezing_offsets", "cs_onsets", "shock", "cs_offsets",]  #
 
     run_group_level_plots_for_event_types(
         completed_pipeline=completed_pipeline,
@@ -81,8 +81,8 @@ if __name__ == "__main__":
     )
     plt.show()
     metadata_df = pd.read_excel(
-        Path(base_path) / "animals_metadata.ods",
-        engine="odf",
+        Path(base_path) / "animals_metadata.xlsx",
+        engine="openpyxl",
     )[["animal_name", "group"]].rename(columns={"animal_name": "animal"})
 
     freezing_profile_df = build_freezing_behavior_profile_table(
@@ -157,7 +157,7 @@ if __name__ == "__main__":
     mi_df = mi_df.replace('gcamp', 'wt')
 
     # 3) plot MI wt vs het + stats
-    ax = plot_modulation_index_wt_vs_het(
+    """ax = plot_modulation_index_wt_vs_het(
         mi_df=mi_df,
         genotype_col="genotype",
         value_col="mod_index",
@@ -165,5 +165,5 @@ if __name__ == "__main__":
         errorbar="se",
         stats_enabled=True,
         alpha=0.05,
-    )
+    )"""
     plt.show()
