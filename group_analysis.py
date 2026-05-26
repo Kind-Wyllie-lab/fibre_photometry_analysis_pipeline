@@ -313,7 +313,7 @@ class PhotometryGroupAnalyzer:
             )
         )
 
-       #oup_summary_dataframe["group_sem_zscore"] = (
+       #group_summary_dataframe["group_sem_zscore"] = (
        #      group_summary_dataframe["group_standard_deviation"]
        #      / np.sqrt(group_summary_dataframe["n_animals"])
         #)
@@ -419,6 +419,72 @@ class PhotometryGroupAnalyzer:
 
         return group_event_auc_summary
 
+    def compute_group_mean_auc(
+                self,
+                auc_window_start_s: float = 0.0,
+                auc_window_end_s: float = 5.0,
+                max_event_index: Optional[int] = 12,
+                session_name: Optional[str] = None,
+        ) -> pd.DataFrame:
+            """
+            Compute mean AUC for each group from animal-level mean peri-event AUC values.
+
+            This method first computes one AUC value per animal and event, then averages
+            AUC across events within each animal, and finally computes the group-level
+            mean and SEM across animals.
+
+            Parameters
+            ----------
+            auc_window_start_s : float, default=0.0
+                Start time of the AUC integration window in seconds.
+            auc_window_end_s : float, default=5.0
+                End time of the AUC integration window in seconds.
+            max_event_index : int or None, default=12
+                Maximum event index to include. If None, all available events are used.
+            session_name : str or None, default=None
+                If provided, restrict computation to one session.
+
+            Returns
+            -------
+            pandas.DataFrame
+                Table with one row per group and session, containing mean AUC,
+                standard deviation, SEM, and number of animals.
+            """
+            animal_event_auc_dataframe = self.compute_animal_event_auc(
+                auc_window_start_s=auc_window_start_s,
+                auc_window_end_s=auc_window_end_s,
+                max_event_index=max_event_index,
+                session_name=session_name,
+            )
+
+            animal_mean_auc_dataframe = (
+                animal_event_auc_dataframe
+                .groupby(["animal", "group", "session_name"], as_index=False)
+                .agg(
+                    animal_mean_auc=("auc", "mean"),
+                )
+            )
+
+            group_mean_auc_dataframe = (
+                animal_mean_auc_dataframe
+                .groupby(["group", "session_name"], as_index=False)
+                .agg(
+                    group_mean_auc=("animal_mean_auc", "mean"),
+                    group_standard_deviation=("animal_mean_auc", "std"),
+                    n_animals=("animal", "nunique"),
+                )
+            )
+
+            group_mean_auc_dataframe["group_sem_auc"] = (
+                    group_mean_auc_dataframe["group_standard_deviation"]
+                    / np.sqrt(group_mean_auc_dataframe["n_animals"])
+            )
+
+            return group_mean_auc_dataframe
+
+
+
+
     def plot_group_event_auc_across_first_events(
             self,
             auc_window_start_s: float = 0.0,
@@ -431,23 +497,18 @@ class PhotometryGroupAnalyzer:
 
         If `max_event_index` is None, all available event indices are plotted.
         """
-        group_event_auc_summary = self.compute_group_event_auc_summary(
+        animal_event_auc_dataframe = self.compute_animal_event_auc(
             auc_window_start_s=auc_window_start_s,
             auc_window_end_s=auc_window_end_s,
             max_event_index=max_event_index,
             session_name=session_name,
         )
 
-        if session_name is not None:
-            group_event_auc_summary = group_event_auc_summary.loc[
-                group_event_auc_summary["session_name"] == session_name
-                ].copy()
-
-        if group_event_auc_summary.empty:
+        if animal_event_auc_dataframe.empty:
             raise ValueError("No group-level event AUC data available for plotting")
 
         if max_event_index is None:
-            event_indices_to_plot = np.sort(group_event_auc_summary["event_index"].unique().astype(int))
+            event_indices_to_plot = np.sort(animal_event_auc_dataframe["event_index"].unique().astype(int))
         else:
             event_indices_to_plot = np.arange(1, int(max_event_index) + 1, dtype=int)
 
@@ -462,8 +523,8 @@ class PhotometryGroupAnalyzer:
             axes = [axes]
 
         for axis, group_name in zip(axes, self.subplot_group_order):
-            group_dataframe = group_event_auc_summary.loc[
-                group_event_auc_summary["group"] == group_name
+            group_dataframe = animal_event_auc_dataframe.loc[
+                animal_event_auc_dataframe["group"] == group_name
                 ].sort_values("event_index")
 
             if group_dataframe.empty:
@@ -475,31 +536,22 @@ class PhotometryGroupAnalyzer:
             sns.lineplot(
                 data=group_dataframe,
                 x="event_index",
-                y="group_mean_auc",
+                y="auc",
+                estimator="mean",
+                errorbar="se",
                 marker="o",
                 color=color_zscore,
                 linewidth=lw_peri_mean,
                 ax=axis,
-                errorbar='se',
             )
-
-            # # SEM as shaded band (more correct than seaborn errorbar here because we already summarized)
-            # axis.fill_between(
-            #     group_dataframe["event_index"].to_numpy(dtype=int),
-            #     (group_dataframe["group_mean_auc"] - group_dataframe["group_sem_auc"]).to_numpy(dtype=float),
-            #     (group_dataframe["group_mean_auc"] + group_dataframe["group_sem_auc"]).to_numpy(dtype=float),
-            #     color=color_zscore,
-            #     alpha=0.25,
-            #     linewidth=0.0,
-            # )
 
             axis.set_xticks(event_indices_to_plot)
             axis.set_ylabel("AUC (z-score·s)")
 
-            max_n = group_dataframe["n_animals"].max()
+            max_n = int(group_dataframe["animal"].nunique())
             suffix = "all events" if max_event_index is None else f"first {max_event_index} events"
             axis.set_title(
-                f"{group_name}  — mean z-score AUC from "
+                f"{group_name} — mean z-score AUC from "
                 f"{auc_window_start_s:.1f} to {auc_window_end_s:.1f} s "
                 f"({suffix}, n={max_n})"
             )
@@ -518,130 +570,111 @@ class PhotometryGroupAnalyzer:
 
         self._finalize_figure(figure, output_stem)
 
+
     def plot_group_event_auc_single_axis_with_hue(
-            self,
-            auc_window_start_s: float = 0.0,
-            auc_window_end_s: float = 5.0,
-            max_event_index: Optional[int] = 12,
-            session_name: Optional[str] = None,
-            hue_order: Optional[list[str]] = None,
-    ) -> None:
-        """
-        Plot group AUC across event indices on a single axis using seaborn hue for groups.
+                self,
+                auc_window_start_s: float = 0.0,
+                auc_window_end_s: float = 5.0,
+                max_event_index: Optional[int] = 12,
+                session_name: Optional[str] = None,
+                hue_order: Optional[list[str]] = None,
+        ) -> None:
+            """
+            Plot group AUC across event indices on a single axis using seaborn hue for groups.
 
-        If `max_event_index` is None, all available event indices are plotted.
+            If `max_event_index` is None, all available event indices are plotted.
 
-        Parameters
-        ----------
-        auc_window_start_s : float, default=0.0
-            Start time of AUC integration window (s).
-        auc_window_end_s : float, default=5.0
-            End time of AUC integration window (s).
-        max_event_index : int or None, default=12
-            If None, includes all events.
-        session_name : str or None, default=None
-            If provided, restrict to one session.
-        hue_order : list of str or None, default=None
-            Order for group hue. If None, uses `self.subplot_group_order`.
-        """
-        group_event_auc_summary = self.compute_group_event_auc_summary(
-            auc_window_start_s=auc_window_start_s,
-            auc_window_end_s=auc_window_end_s,
-            max_event_index=max_event_index,
-            session_name=session_name,
-        )
+            Parameters
+            ----------
+            auc_window_start_s : float, default=0.0
+                Start time of AUC integration window (s).
+            auc_window_end_s : float, default=5.0
+                End time of AUC integration window (s).
+            max_event_index : int or None, default=12
+                If None, includes all events.
+            session_name : str or None, default=None
+                If provided, restrict to one session.
+            hue_order : list of str or None, default=None
+                Order for group hue. If None, uses `self.subplot_group_order`.
+            """
+            animal_event_auc_dataframe = self.compute_animal_event_auc(
+                auc_window_start_s=auc_window_start_s,
+                auc_window_end_s=auc_window_end_s,
+                max_event_index=max_event_index,
+                session_name=session_name,
+            )
 
-        if session_name is not None:
-            group_event_auc_summary = group_event_auc_summary.loc[
-                group_event_auc_summary["session_name"] == session_name
-                ].copy()
+            if animal_event_auc_dataframe.empty:
+                raise ValueError("No group-level event AUC data available for plotting")
 
-        if group_event_auc_summary.empty:
-            raise ValueError("No group-level event AUC data available for plotting")
+            if max_event_index is None:
+                event_indices_to_plot = np.sort(animal_event_auc_dataframe["event_index"].unique().astype(int))
+            else:
+                event_indices_to_plot = np.arange(1, int(max_event_index) + 1, dtype=int)
 
-        # Determine x ticks
-        if max_event_index is None:
-            event_indices_to_plot = np.sort(group_event_auc_summary["event_index"].unique().astype(int))
-        else:
-            event_indices_to_plot = np.arange(1, int(max_event_index) + 1, dtype=int)
+            if hue_order is None:
+                hue_order = list(self.subplot_group_order)
 
-        if hue_order is None:
-            hue_order = list(self.subplot_group_order)
+            palette = sns.color_palette("colorblind", n_colors=len(hue_order))
+            group_to_color = {g: palette[i] for i, g in enumerate(hue_order)}
 
-        # Prepare a palette (distinct, colorblind-friendly)
-        palette = sns.color_palette("colorblind", n_colors=len(hue_order))
-        group_to_color = {g: palette[i] for i, g in enumerate(hue_order)}
+            figure, ax = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True, sharey=True)
 
-        figure, ax = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True, sharey=True)
+            sns.lineplot(
+                data=animal_event_auc_dataframe,
+                x="event_index",
+                y="auc",
+                hue="group",
+                hue_order=hue_order,
+                estimator="mean",
+                errorbar="se",
+                palette=group_to_color,
+                marker="o",
+                linewidth=lw_peri_mean,
+                ax=ax,
+            )
 
-        sns.lineplot(
-            data=group_event_auc_summary,
-            x="event_index",
-            y="group_mean_auc",
-            hue="group",
-            hue_order=hue_order,
-            palette=group_to_color,
-            marker="o",
-            linewidth=lw_peri_mean,
-            errorbar='se',
-            ax=ax,
-        )
+            ax.set_xticks(event_indices_to_plot)
+            ax.set_xlabel("Event index")
+            ax.set_ylabel("AUC (z-score·s)")
 
-        # SEM shading per group
-        for group_name in hue_order:
-            gdf = group_event_auc_summary.loc[
-                group_event_auc_summary["group"] == group_name
-                ].sort_values("event_index")
-            if gdf.empty:
-                continue
+            suffix = "all events" if max_event_index is None else f"first {max_event_index} events"
+            session_suffix = f" | {session_name}" if session_name is not None else ""
+            ax.set_title(
+                f"Group mean z-score AUC [{auc_window_start_s:.1f}, {auc_window_end_s:.1f}] s "
+                f"({suffix}){session_suffix}"
+            )
 
-            ax.fill_between(
-                 gdf["event_index"].to_numpy(dtype=int),
-                 (gdf["group_mean_auc"] - gdf["group_sem_auc"]).to_numpy(dtype=float),
-                 (gdf["group_mean_auc"] + gdf["group_sem_auc"]).to_numpy(dtype=float),
-                 color=group_to_color[group_name],
-                 alpha=0.22,
-                 linewidth=0.0,
-             )
+            group_counts = (
+                animal_event_auc_dataframe.groupby("group")["animal"]
+                .nunique()
+                .to_dict()
+            )
 
-        ax.set_xticks(event_indices_to_plot)
-        ax.set_xlabel("Event index")
-        ax.set_ylabel("AUC (z-score·s)")
+            handles, labels = ax.get_legend_handles_labels()
+            if labels and labels[0] == "group":
+                handles = handles[1:]
+                labels = labels[1:]
 
-        suffix = "all events" if max_event_index is None else f"first {max_event_index} events"
-        session_suffix = f" | {session_name}" if session_name is not None else ""
-        ax.set_title(
-            f"Group mean z-score AUC [{auc_window_start_s:.1f}, {auc_window_end_s:.1f}] s "
-            f"({suffix}){session_suffix}"
-        )
+            new_labels = [
+                f"{label} (n={group_counts.get(label, 0)})"
+                for label in labels
+            ]
 
-        # Legend with n per group (max n across event indices)
-        handles, labels = ax.get_legend_handles_labels()
-        # labels includes title entry at index 0 in some seaborn versions; handle robustly:
-        if labels and labels[0] == "group":
-            labels = labels[1:]
-            handles = handles[1:]
-            labels = labels[1:]
+            ax.legend(handles, new_labels, title="Group", frameon=False)
+            ax.grid(alpha=0.3)
+            figure.tight_layout()
 
-        new_labels = []
-        for lbl in labels:
-            gdf = group_event_auc_summary.loc[group_event_auc_summary["group"] == lbl]
-            n_max = int(gdf["n_animals"].max()) if not gdf.empty else 0
-            new_labels.append(f"{lbl} (n={n_max})")
+            output_stem = "group_event_auc_single_plot"
+            if max_event_index is None:
+                output_stem += "_all_events"
+            else:
+                output_stem += f"_first_{max_event_index}_events"
+            if session_name is not None:
+                output_stem += f"_{session_name}"
 
-        ax.legend(handles, new_labels, title="Group", frameon=False)
-        ax.grid(alpha=0.3)
-        figure.tight_layout()
+            self._finalize_figure(figure, output_stem)
 
-        output_stem = "group_event_auc_single_plot"
-        if max_event_index is None:
-            output_stem += "_all_events"
-        else:
-            output_stem += f"_first_{max_event_index}_events"
-        if session_name is not None:
-            output_stem += f"_{session_name}"
-
-        self._finalize_figure(figure, output_stem)
 
     def plot_group_average_all_events(self, session_name: Optional[str] = None) -> None:
         """
@@ -652,20 +685,20 @@ class PhotometryGroupAnalyzer:
         session_name : str, optional
             If provided, restrict plotting to one session.
         """
-        group_summary_dataframe = self.compute_group_summary_all_events()
+        animal_averaged_dataframe = self.compute_animal_averaged_all_events()
 
         if session_name is not None:
-            group_summary_dataframe = group_summary_dataframe.loc[
-                group_summary_dataframe["session_name"] == session_name
+            animal_averaged_dataframe = animal_averaged_dataframe.loc[
+                animal_averaged_dataframe["session_name"] == session_name
                 ].copy()
 
-        if group_summary_dataframe.empty:
+        if animal_averaged_dataframe.empty:
             raise ValueError("No group data available for all-event plotting")
 
         figure, axes = plt.subplots(
             len(self.subplot_group_order),
             1,
-            figsize=(figure_size_peri[0], figure_size_peri[1]),
+            figsize=(figure_size_peri[0], figure_size_peri[1] * len(self.subplot_group_order)),
             sharex=True,
             sharey=True,
         )
@@ -674,8 +707,8 @@ class PhotometryGroupAnalyzer:
             axes = [axes]
 
         for axis, group_name in zip(axes, self.subplot_group_order):
-            signal_dataframe = group_summary_dataframe.loc[
-                group_summary_dataframe["group"] == group_name
+            signal_dataframe = animal_averaged_dataframe.loc[
+                animal_averaged_dataframe["group"] == group_name
                 ].sort_values("time_s")
 
             if signal_dataframe.empty:
@@ -687,8 +720,9 @@ class PhotometryGroupAnalyzer:
             sns.lineplot(
                 data=signal_dataframe,
                 x="time_s",
-                y="group_mean_zscore",
-                errorbar='se',
+                y="animal_mean_zscore",
+                estimator="mean",
+                errorbar="se",
                 color=color_zscore,
                 linewidth=lw_peri_mean,
                 ax=axis,
@@ -696,7 +730,7 @@ class PhotometryGroupAnalyzer:
 
             axis.axvline(0, color=color_event_onset, linestyle="--", linewidth=0.8)
             axis.set_ylabel("Z-score")
-            n_animals = int(signal_dataframe["n_animals"].max())
+            n_animals = int(signal_dataframe["animal"].nunique())
             axis.set_title(
                 f"Group peri-event average {params.sessions[0]} — {group_name} "
                 f"(all events, n={n_animals})"
@@ -707,6 +741,90 @@ class PhotometryGroupAnalyzer:
         figure.tight_layout()
 
         output_stem = "group_peri_event_all_events_zscore"
+        if session_name is not None:
+            output_stem += f"_{session_name}"
+
+        self._finalize_figure(figure, output_stem)
+
+    def plot_group_average_all_events_wt_het_superimposed(
+            self,
+            session_name: Optional[str] = None,
+    ) -> None:
+        """
+        Plot wt and het group peri-event averages across all events on a single axis.
+
+        The trace is computed from animal-level mean peri-event responses, with
+        mean and SEM across animals shown for each group.
+
+        Parameters
+        ----------
+        session_name : str, optional
+            If provided, restrict plotting to one session.
+
+        Returns
+        -------
+        None
+            The figure is saved and/or displayed according to project configuration.
+        """
+        animal_averaged_dataframe = self.compute_animal_averaged_all_events()
+
+        if session_name is not None:
+            animal_averaged_dataframe = animal_averaged_dataframe.loc[
+                animal_averaged_dataframe["session_name"] == session_name
+                ].copy()
+
+        animal_averaged_dataframe = animal_averaged_dataframe.loc[
+            animal_averaged_dataframe["group"].isin(["wt", "het"])
+        ].copy()
+
+        if animal_averaged_dataframe.empty:
+            raise ValueError("No wt/het group data available for all-event plotting")
+
+        group_color_map = {
+            "wt": "black",
+            "het": "blue",
+        }
+
+        figure, axis = plt.subplots(
+            1,
+            1,
+            figsize=figure_size_peri,
+            sharex=True,
+            sharey=True,
+        )
+
+        for group_name in ["wt", "het"]:
+            signal_dataframe = animal_averaged_dataframe.loc[
+                animal_averaged_dataframe["group"] == group_name
+                ].sort_values("time_s")
+
+            if signal_dataframe.empty:
+                continue
+
+            sns.lineplot(
+                data=signal_dataframe,
+                x="time_s",
+                y="animal_mean_zscore",
+                estimator="mean",
+                errorbar="se",
+                color=group_color_map[group_name],
+                linewidth=lw_peri_mean,
+                ax=axis,
+                label=f"{group_name} (n={signal_dataframe['animal'].nunique()})",
+            )
+
+        axis.axvline(0, color=color_event_onset, linestyle="--", linewidth=0.8)
+        axis.set_xlabel("Time from event (s)")
+        axis.set_ylabel("Z-score")
+
+        session_label = session_name if session_name is not None else "all sessions"
+        axis.set_title(f"Group peri-event average — wt vs het (all events, {session_label})")
+        axis.grid(alpha=0.3)
+        axis.legend(frameon=False)
+
+        figure.tight_layout()
+
+        output_stem = "group_peri_event_all_events_wt_het_superimposed_zscore"
         if session_name is not None:
             output_stem += f"_{session_name}"
 
@@ -727,14 +845,14 @@ class PhotometryGroupAnalyzer:
         session_name : str, optional
             If provided, restrict plotting to one session.
         """
-        group_summary_dataframe = self.compute_group_summary_single_event(event_index)
+        animal_event_dataframe = self.compute_animal_averaged_single_event(event_index)
 
         if session_name is not None:
-            group_summary_dataframe = group_summary_dataframe.loc[
-                group_summary_dataframe["session_name"] == session_name
+            animal_event_dataframe = animal_event_dataframe.loc[
+                animal_event_dataframe["session_name"] == session_name
                 ].copy()
 
-        if group_summary_dataframe.empty:
+        if animal_event_dataframe.empty:
             raise ValueError(
                 f"No group data available for event_index={event_index}"
             )
@@ -742,7 +860,7 @@ class PhotometryGroupAnalyzer:
         figure, axes = plt.subplots(
             len(self.subplot_group_order),
             1,
-            figsize=(figure_size_peri[0], figure_size_peri[1]),
+            figsize=(figure_size_peri[0], figure_size_peri[1] * len(self.subplot_group_order)),
             sharex=True,
             sharey=True,
         )
@@ -751,8 +869,8 @@ class PhotometryGroupAnalyzer:
             axes = [axes]
 
         for axis, group_name in zip(axes, self.subplot_group_order):
-            signal_dataframe = group_summary_dataframe.loc[
-                group_summary_dataframe["group"] == group_name
+            signal_dataframe = animal_event_dataframe.loc[
+                animal_event_dataframe["group"] == group_name
                 ].sort_values("time_s")
 
             if signal_dataframe.empty:
@@ -764,8 +882,9 @@ class PhotometryGroupAnalyzer:
             sns.lineplot(
                 data=signal_dataframe,
                 x="time_s",
-                y="group_mean_zscore",
-                errorbar='se',
+                y="animal_mean_zscore",
+                estimator="mean",
+                errorbar="se",
                 color=color_zscore,
                 linewidth=lw_peri_mean,
                 ax=axis,
@@ -773,9 +892,9 @@ class PhotometryGroupAnalyzer:
 
             axis.axvline(0, color=color_event_onset, linestyle="--", linewidth=0.8)
             axis.set_ylabel("Z-score")
-            n_animals = int(signal_dataframe["n_animals"].max())
+            n_animals = int(signal_dataframe["animal"].nunique())
             axis.set_title(
-                f"Group peri-event average  — {group_name} "
+                f"Group peri-event average — {group_name} "
                 f"(event {event_index}, n={n_animals})"
             )
             axis.grid(alpha=0.3)
@@ -865,15 +984,27 @@ def run_group_level_plots_for_event_types(
         Session name restriction for AUC plotting. Set to None to compute across all sessions.
     """
     group_output_root.mkdir(parents=True, exist_ok=True)
+    auc_group_mean_output_directory = Path(r"E:\Fibre_photmetry\auc group means")
+    auc_group_mean_output_directory.mkdir(parents=True, exist_ok=True)
 
     for event_table_key in event_types:
 
         output_dir = group_output_root / event_table_key
         output_dir.mkdir(parents=True, exist_ok=True)
-        for channel in ['CH1', 'CH2']:
+
+        for channel in ["CH1", "CH2"]:
             print(event_table_key, channel)
-            group_peri_event_dff = completed_pipeline.build_group_peri_event_dataframe(event_table_key, channel=channel, signal_key='dff')
-            group_peri_event_zscore = completed_pipeline.build_group_peri_event_dataframe(event_table_key, channel=channel, signal_key='zscore')
+
+            group_peri_event_dff = completed_pipeline.build_group_peri_event_dataframe(
+                event_table_key,
+                channel=channel,
+                signal_key="dff",
+            )
+            group_peri_event_zscore = completed_pipeline.build_group_peri_event_dataframe(
+                event_table_key,
+                channel=channel,
+                signal_key="zscore",
+            )
 
             if group_peri_event_dff.empty:
                 print(f"[GROUP] No data for event type {event_table_key!r} -> skipping")
@@ -881,38 +1012,99 @@ def run_group_level_plots_for_event_types(
 
             group_analyzer_dff = PhotometryGroupAnalyzer(
                 session_level_peri_event_dataframe=group_peri_event_dff,
-                output_directory=output_dir, channel=channel
+                output_directory=output_dir,
+                channel=channel,
             )
 
             group_analyzer_zscore = PhotometryGroupAnalyzer(
                 session_level_peri_event_dataframe=group_peri_event_zscore,
-                output_directory=output_dir, channel=channel
+                output_directory=output_dir,
+                channel=channel,
             )
-            for signal_type in [group_analyzer_dff, group_analyzer_zscore]:
-                signal_type.plot_group_average_all_events()
 
-                if 'cs' in event_table_key or 'shock' in event_table_key:
-                    if session_name_for_auc == 'Recall':
-                        max_event_index = 12
-                    elif session_name_for_auc == 'Cond':
-                        if event_table_key == 'shock' or event_table_key == 'cs_offsets':
-                            max_event_index = 5
+            for signal_type in [group_analyzer_dff, group_analyzer_zscore]:
+                signal_label = "zscore" if signal_type is group_analyzer_zscore else "dff"
+
+                available_sessions = sorted(
+                    signal_type.session_level_peri_event_dataframe["session_name"]
+                    .dropna()
+                    .astype(str)
+                    .unique()
+                )
+
+                for current_session_name in available_sessions:
+                    if "cs" in event_table_key or "shock" in event_table_key:
+                        if current_session_name == "Recall":
+                            current_max_event_index = 12
+                        elif current_session_name == "Cond":
+                            if event_table_key in {"shock", "cs_offsets"}:
+                                current_max_event_index = 5
+                            else:
+                                current_max_event_index = 6
                         else:
-                            max_event_index = 6
-                    for event_index in range(max_event_index):
-                        signal_type.plot_group_average_single_event(event_index=event_index + 1)
+                            current_max_event_index = max_event_index
+                    else:
+                        current_max_event_index = None
+
+                    try:
+                        group_mean_auc_dataframe = signal_type.compute_group_event_auc_summary(
+                            auc_window_start_s=auc_window_start_s,
+                            auc_window_end_s=auc_window_end_s,
+                            max_event_index=current_max_event_index,
+                            session_name=current_session_name,
+                        )
+                    except ValueError:
+                        print(
+                            f"[GROUP AUC] No data for event_type={event_table_key}, "
+                            f"signal={signal_label}, channel={channel}, session={current_session_name}"
+                        )
+                        continue
+
+                    print(group_mean_auc_dataframe)
+
+                    output_csv_path = auc_group_mean_output_directory / (
+                        f"group_mean_auc_{event_table_key}_{current_session_name}_"
+                        f"{auc_window_start_s:.1f}_to_{auc_window_end_s:.1f}s_"
+                        f"{signal_label}_{channel}.csv"
+                    )
+
+                    group_mean_auc_dataframe.to_csv(output_csv_path, index=False)
+                    print(f"Saved: {output_csv_path}")
+
+                signal_type.plot_group_average_all_events(session_name=session_name_for_auc)
+                signal_type.plot_group_average_all_events(session_name=session_name_for_auc)
+                signal_type.plot_group_average_all_events_wt_het_superimposed(
+                    session_name=session_name_for_auc
+                )
+
+                if "cs" in event_table_key or "shock" in event_table_key:
+                    if session_name_for_auc == "Recall":
+                        plotting_max_event_index = 12
+                    elif session_name_for_auc == "Cond":
+                        if event_table_key in {"shock", "cs_offsets"}:
+                            plotting_max_event_index = 5
+                        else:
+                            plotting_max_event_index = 6
+                    else:
+                        plotting_max_event_index = max_event_index
+
+                    for event_index in range(plotting_max_event_index):
+                        signal_type.plot_group_average_single_event(
+                            event_index=event_index + 1
+                        )
                 else:
-                    max_event_index = None
+                    plotting_max_event_index = None
 
                 signal_type.plot_group_event_auc_across_first_events(
                     auc_window_start_s=auc_window_start_s,
                     auc_window_end_s=auc_window_end_s,
-                    max_event_index=max_event_index,
+                    max_event_index=plotting_max_event_index,
                     session_name=session_name_for_auc,
                 )
+
                 signal_type.plot_group_event_auc_single_axis_with_hue(
                     auc_window_start_s=auc_window_start_s,
                     auc_window_end_s=auc_window_end_s,
-                    max_event_index=max_event_index,
+                    max_event_index=plotting_max_event_index,
                     session_name=session_name_for_auc,
                 )
