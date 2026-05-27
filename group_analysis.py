@@ -419,7 +419,7 @@ class PhotometryGroupAnalyzer:
 
         return group_event_auc_summary
 
-    def compute_group_mean_auc(
+    def compute_animal_mean_auc_across_events(
                 self,
                 auc_window_start_s: float = 0.0,
                 auc_window_end_s: float = 5.0,
@@ -427,11 +427,12 @@ class PhotometryGroupAnalyzer:
                 session_name: Optional[str] = None,
         ) -> pd.DataFrame:
             """
-            Compute mean AUC for each group from animal-level mean peri-event AUC values.
+            Compute mean peri-event AUC across trials within each animal.
 
-            This method first computes one AUC value per animal and event, then averages
-            AUC across events within each animal, and finally computes the group-level
-            mean and SEM across animals.
+            This method first computes one AUC value for each individual event/trial,
+            then averages those AUC values across events within each animal. The
+            returned dataframe therefore contains one datapoint per animal, which is
+            the appropriate input for group bar plots with animal-level dots.
 
             Parameters
             ----------
@@ -440,15 +441,17 @@ class PhotometryGroupAnalyzer:
             auc_window_end_s : float, default=5.0
                 End time of the AUC integration window in seconds.
             max_event_index : int or None, default=12
-                Maximum event index to include. If None, all available events are used.
+                Maximum event index to include. If None, all available event indices
+                are included.
             session_name : str or None, default=None
                 If provided, restrict computation to one session.
 
             Returns
             -------
             pandas.DataFrame
-                Table with one row per group and session, containing mean AUC,
-                standard deviation, SEM, and number of animals.
+                Dataframe with one row per animal and session. Columns include
+                ``animal``, ``group``, ``session_name``, ``animal_mean_auc``, and
+                ``n_events_used``.
             """
             animal_event_auc_dataframe = self.compute_animal_event_auc(
                 auc_window_start_s=auc_window_start_s,
@@ -462,25 +465,15 @@ class PhotometryGroupAnalyzer:
                 .groupby(["animal", "group", "session_name"], as_index=False)
                 .agg(
                     animal_mean_auc=("auc", "mean"),
+                    n_events_used=("event_index", "nunique"),
                 )
             )
 
-            group_mean_auc_dataframe = (
-                animal_mean_auc_dataframe
-                .groupby(["group", "session_name"], as_index=False)
-                .agg(
-                    group_mean_auc=("animal_mean_auc", "mean"),
-                    group_standard_deviation=("animal_mean_auc", "std"),
-                    n_animals=("animal", "nunique"),
-                )
-            )
+            if animal_mean_auc_dataframe.empty:
+                raise ValueError("No valid animal mean AUC values could be computed")
 
-            group_mean_auc_dataframe["group_sem_auc"] = (
-                    group_mean_auc_dataframe["group_standard_deviation"]
-                    / np.sqrt(group_mean_auc_dataframe["n_animals"])
-            )
+            return animal_mean_auc_dataframe
 
-            return group_mean_auc_dataframe
 
 
 
@@ -1047,7 +1040,7 @@ def run_group_level_plots_for_event_types(
                         current_max_event_index = None
 
                     try:
-                        group_mean_auc_dataframe = signal_type.compute_group_event_auc_summary(
+                        animal_mean_auc_dataframe = signal_type.compute_animal_mean_auc_across_events(
                             auc_window_start_s=auc_window_start_s,
                             auc_window_end_s=auc_window_end_s,
                             max_event_index=current_max_event_index,
@@ -1060,15 +1053,15 @@ def run_group_level_plots_for_event_types(
                         )
                         continue
 
-                    print(group_mean_auc_dataframe)
+                    print(animal_mean_auc_dataframe)
 
                     output_csv_path = auc_group_mean_output_directory / (
-                        f"group_mean_auc_{event_table_key}_{current_session_name}_"
+                        f"animal_mean_auc_{event_table_key}_{current_session_name}_"
                         f"{auc_window_start_s:.1f}_to_{auc_window_end_s:.1f}s_"
                         f"{signal_label}_{channel}.csv"
                     )
 
-                    group_mean_auc_dataframe.to_csv(output_csv_path, index=False)
+                    animal_mean_auc_dataframe.to_csv(output_csv_path, index=False)
                     print(f"Saved: {output_csv_path}")
 
                 signal_type.plot_group_average_all_events(session_name=session_name_for_auc)

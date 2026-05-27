@@ -29,32 +29,38 @@ for file in all_files:
     df = pd.read_csv(file)
     df.columns = df.columns.str.strip()
 
-    required_columns = {"group", "event_index", "group_mean_auc"}
+    required_columns = {"animal", "group", "animal_mean_auc"}
     if not required_columns.issubset(df.columns):
-        print(f"Skipping {file.name}: missing required columns")
+        print(f"Skipping {file.name}: missing required columns {sorted(required_columns)}")
         continue
 
     df = df.copy()
+    df["animal"] = df["animal"].astype(str)
     df["group"] = df["group"].astype(str)
-    df = df.loc[df["group"].isin(group_order)].copy()
+    df["animal_mean_auc"] = pd.to_numeric(df["animal_mean_auc"], errors="coerce")
+    df = df.loc[df["group"].isin(group_order)].dropna(subset=["animal_mean_auc"]).copy()
 
     if df.empty:
+        print(f"Skipping {file.name}: no valid animal-level AUC values")
         continue
 
     summary = (
         df.groupby("group", as_index=False)
         .agg(
-            mean_auc=("group_mean_auc", "mean"),
-            std_auc=("group_mean_auc", "std"),
-            n_events=("event_index", "nunique"),
+            mean_auc=("animal_mean_auc", "mean"),
+            std_auc=("animal_mean_auc", "std"),
+            n_animals=("animal", "nunique"),
         )
     )
 
-    summary["sem_auc"] = summary["std_auc"] / np.sqrt(summary["n_events"])
+    summary["sem_auc"] = (
+            summary["std_auc"] / np.sqrt(summary["n_animals"].replace(0, np.nan))
+    )
     summary["group"] = pd.Categorical(summary["group"], categories=group_order, ordered=True)
     summary = summary.sort_values("group").dropna(subset=["mean_auc"]).reset_index(drop=True)
 
     if summary.empty:
+        print(f"Skipping {file.name}: summary empty after aggregation")
         continue
 
     summary_by_file.append((file, df, summary))
@@ -71,10 +77,34 @@ if not summary_by_file:
 y_padding = 0.1 * (global_ymax - global_ymin if global_ymax > global_ymin else 1.0)
 shared_ylim = (global_ymin - y_padding, global_ymax + y_padding)
 
+
+def _build_symmetric_jitter(n_points: int, max_half_width: float = 0.08) -> np.ndarray:
+    """
+    Build evenly spaced symmetric x-jitter for overlayed animal datapoints.
+
+    Parameters
+    ----------
+    n_points : int
+        Number of points to jitter.
+    max_half_width : float, default=0.08
+        Maximum horizontal spread on either side of the bar center.
+
+    Returns
+    -------
+    numpy.ndarray
+        Jitter offsets centered on zero.
+    """
+    if n_points <= 0:
+        return np.array([], dtype=float)
+    if n_points == 1:
+        return np.array([0.0], dtype=float)
+    return np.linspace(-max_half_width, max_half_width, n_points, dtype=float)
+
+
 for file, df, summary in summary_by_file:
     fig, ax = plt.subplots(figsize=(7.0, 5.2))
 
-    x_positions = np.arange(len(summary))
+    x_positions = np.arange(len(summary), dtype=float)
 
     ax.bar(
         x_positions,
@@ -89,32 +119,33 @@ for file, df, summary in summary_by_file:
     )
 
     for x_position, group_name in zip(x_positions, summary["group"].astype(str)):
-        group_event_values = df.loc[df["group"] == group_name, "group_mean_auc"].to_numpy(dtype=float)
+        group_animal_values = (
+            df.loc[df["group"] == group_name]
+            .sort_values("animal")["animal_mean_auc"]
+            .to_numpy(dtype=float)
+        )
 
-        if group_event_values.size == 0:
+        if group_animal_values.size == 0:
             continue
 
-        if group_event_values.size == 1:
-            x_jittered = np.array([x_position], dtype=float)
-        else:
-            x_jittered = x_position + np.linspace(-0.08, 0.08, group_event_values.size)
+        x_jittered = x_position + _build_symmetric_jitter(group_animal_values.size, max_half_width=0.08)
 
         ax.scatter(
             x_jittered,
-            group_event_values,
+            group_animal_values,
             s=45,
             color=group_colors[group_name],
             edgecolor="white",
             linewidth=0.6,
             zorder=3,
-            label=group_name,
+            label=f"{group_name} (n={int((df['group'] == group_name).sum())})",
         )
 
     ax.set_xticks(x_positions)
     ax.set_xticklabels(summary["group"].astype(str), fontsize=15)
     ax.set_ylabel("Mean AUC across events", fontsize=18)
     ax.set_xlabel("Group", fontsize=16)
-#    ax.set_ylim(shared_ylim)
+    #ax.set_ylim(shared_ylim)
     ax.set_title(file.stem.replace("_", " "), fontsize=12, pad=12)
 
     ax.tick_params(axis="y", labelsize=16)
@@ -125,19 +156,20 @@ for file, df, summary in summary_by_file:
 
     legend_title = "Group"
 
-    wt_event_values = df.loc[df["group"] == "wt", "group_mean_auc"].to_numpy(dtype=float)
-    het_event_values = df.loc[df["group"] == "het", "group_mean_auc"].to_numpy(dtype=float)
+    wt_animal_values = df.loc[df["group"] == "wt", "animal_mean_auc"].to_numpy(dtype=float)
+    het_animal_values = df.loc[df["group"] == "het", "animal_mean_auc"].to_numpy(dtype=float)
 
-    if wt_event_values.size >= 2 and het_event_values.size >= 2:
-        stats_result = _two_group_independent_test(wt_event_values, het_event_values, alpha=0.05)
+    if wt_animal_values.size >= 2 and het_animal_values.size >= 2:
+        stats_result = _two_group_independent_test(wt_animal_values, het_animal_values, alpha=0.05)
         stars = _p_to_stars(stats_result["p"])
 
         wt_mask = summary["group"].astype(str) == "wt"
         het_mask = summary["group"].astype(str) == "het"
-        wt_x = x_positions[wt_mask][0]
-        het_x = x_positions[het_mask][0]
 
-        _annotate_two_group_stars(ax, x_positions=(wt_x, het_x), stars=stars)
+        if wt_mask.any() and het_mask.any():
+            wt_x = x_positions[wt_mask][0]
+            het_x = x_positions[het_mask][0]
+            _annotate_two_group_stars(ax, x_positions=(wt_x, het_x), stars=stars)
 
         is_significant = bool(stats_result["p"] < 0.05)
         if is_significant:
@@ -176,11 +208,11 @@ for file, df, summary in summary_by_file:
                 "significant": False,
                 "normal": np.nan,
                 "equal_var": np.nan,
-                "n_wt": wt_event_values.size,
-                "n_het": het_event_values.size,
+                "n_wt": wt_animal_values.size,
+                "n_het": het_animal_values.size,
             }
         )
-        print(f"{file.name} | wt vs het stats skipped: not enough event values")
+        print(f"{file.name} | wt vs het stats skipped: not enough animal values")
 
     handles, labels = ax.get_legend_handles_labels()
     unique_labels = []
