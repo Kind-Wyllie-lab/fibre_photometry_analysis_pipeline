@@ -985,7 +985,8 @@ def run_group_level_plots_for_event_types(
         output_dir = group_output_root / event_table_key
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        for channel in ["CH1", "CH2"]:
+        #for channel in ["CH1", "CH2"]:
+        for channel in ["CH1"]:
             print(event_table_key, channel)
 
             group_peri_event_dff = completed_pipeline.build_group_peri_event_dataframe(
