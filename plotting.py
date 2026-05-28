@@ -1058,8 +1058,8 @@ def plot_freezing_ratio_profiles(
     bout_columns = ["pre_cs"]
     for i in range(1, 12 + 1):
         bout_columns.append(f"cs_{i}")
-        if i <= 10:
-            bout_columns.append(f"noncs_{i}")
+        #if i <= 10:
+        #    bout_columns.append(f"noncs_{i}")
     if include_post_cs and "post_cs" in df.columns:
         bout_columns.append("post_cs")
     bout_columns = [c for c in bout_columns if c in df.columns]
@@ -1091,22 +1091,58 @@ def plot_freezing_ratio_profiles(
             df_long[animal_column].astype(str) + " (" + df_long[group_column].astype(str) + ")"
         )
 
-    fig, ax = plt.subplots(1, 1, figsize=figure_size)
+    # plot all
+    #palette={"wt": "black", "het": "blue", "gcamp": "green"}
+    # delete gcamp
+    #df_long = df_long.loc[df_long["group"] != "gcamp"].copy()
+    # merge gcamp with wt
+    df_long.loc[df_long["group"] == "gcamp", "group"] = "wt"
 
+    palette={"wt": "black", "het": "blue"}
+
+
+    df_long["freezing_ratio"] = df_long["freezing_ratio"] * 100
+
+    fig, ax = plt.subplots(1, 1, figsize=figure_size)
+    #print("%%%")
+   # print(df_long)
     if mode == "group_mean_sem":
         # seaborn does mean + SEM in one call
-        sns.lineplot(
+        sns.pointplot(
             data=df_long,
             x="bout_index",
             y="freezing_ratio",
             hue=group_column,
-            hue_order=list(groups_order),
+            hue_order=list(palette.keys()),
             estimator="mean",
             errorbar="se",
-            lw=2.2,
+            palette=palette,
+            #dodge=0.25,
+            markers="o",
+            linestyles="-",
+            capsize=0.15,
+            err_kws={"linewidth": 1.4},
             ax=ax,
         )
         title = "Freezing ratio profile (group mean ± SEM across animals)"
+
+        group_counts = (
+            df_long.groupby("group")["animal"]
+            .nunique()
+            .to_dict()
+        )
+
+        handles, labels = ax.get_legend_handles_labels()
+        if labels and labels[0] == "group":
+            handles = handles[1:]
+            labels = labels[1:]
+
+        new_labels = [
+            f"{label} (n={group_counts.get(label, 0)})"
+            for label in labels
+        ]
+
+        ax.legend(handles, new_labels, title="Group", frameon=False)
 
     elif mode == "individual_animals":
         animal_labels = sorted(df_long["animal_with_group"].unique().tolist())
@@ -1153,9 +1189,9 @@ def plot_freezing_ratio_profiles(
 
     # Axes cosmetics
     ax.set_xlim(-0.5, len(bout_columns) - 0.5)
-    ax.set_ylim(0, 1.0)
+    ax.set_ylim(0, 115)
     ax.set_xlabel("Session bout")
-    ax.set_ylabel("Freezing ratio (time freezing / total time)")
+    ax.set_ylabel("Freezing percentage (time freezing / total time)")
     ax.set_title(title + (f" | session={session_name}" if session_name is not None else ""))
     ax.grid(alpha=0.25)
 
@@ -1165,6 +1201,9 @@ def plot_freezing_ratio_profiles(
     ax.spines['right'].set_visible(False)
 
     fig.tight_layout()
+    if mode == "group_mean_sem":
+        fig.savefig(f"group_freezing_ratio_profile_{session_name}.svg", dpi=300)
+
     return fig
 
 def plot_single_animal_freezing_ratio_profile(
@@ -1311,6 +1350,7 @@ def plot_extinction_index_wt_vs_het(
     stats_enabled: bool = True,
     alpha: float = 0.05,
     ax: plt.Axes | None = None,
+    session: str | None = None,
 ) -> plt.Axes | None:
     """
     Plot extinction index (EI) for wt vs het with mean±SE overlay and star-annotated stats.
@@ -1372,6 +1412,19 @@ def plot_extinction_index_wt_vs_het(
         plt.figure(figsize=(6.5, 4.2))
         ax = plt.gca()
 
+    fig, ax = plt.subplots(1, 1)
+
+    sns.barplot(
+        data=df_plot,
+        x=genotype_col,
+        y=value_col,
+        order=order,
+        errorbar=errorbar,
+        palette=palette,
+        ax=ax,
+    )
+
+
     if show_points:
         sns.stripplot(
             data=df_plot,
@@ -1380,23 +1433,13 @@ def plot_extinction_index_wt_vs_het(
             order=order,
             dodge=False,
             alpha=point_alpha,
-            palette=palette,
+            color="white",
+            edgecolor="black",
+            linewidth=0.8,
+            jitter=0.065,
+            size=5,
             ax=ax,
         )
-
-    sns.pointplot(
-        data=df_plot,
-        x=genotype_col,
-        y=value_col,
-        order=order,
-        dodge=0.2,
-        join=False,
-        markers="D",
-        linestyles="",
-        errorbar=errorbar,
-        palette=palette,
-        ax=ax,
-    )
 
     ax.axhline(0.0, color="k", lw=1, alpha=0.35)
     ax.set_ylabel("Extinction index")
@@ -1404,6 +1447,7 @@ def plot_extinction_index_wt_vs_het(
     ax.set_title("Extinction index (wt vs het)")
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
+
 
     if stats_enabled:
         x = df_plot.loc[df_plot[genotype_col] == "wt", value_col].to_numpy(dtype=float)
@@ -1417,6 +1461,8 @@ def plot_extinction_index_wt_vs_het(
             f"EI stats: {res['test']}; p={res['p']:.3g}; normal={res['normal']}; "
             f"equal_var={res['equal_var']}; n={res['n1']} vs {res['n2']}"
         )
+
+    fig.savefig(f'exctinction_index_{session}.svg', dpi=300)
 
     return ax
 
