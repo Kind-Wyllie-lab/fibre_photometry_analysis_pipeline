@@ -183,7 +183,10 @@ class PhotometrySession:
             else:
                 timings = ['cs_onsets', 'cs_offsets', 'freezing_onsets', 'freezing_offsets', 'shock']
 
-            for timing in timings:
+            timings = ['cs_onsets']
+
+
+        for timing in timings:
 
                 if timing in self.event_tables.keys():
                     self.event_times_s = self.event_tables[timing]
@@ -310,7 +313,7 @@ class PhotometrySession:
         if not can_run:
             return self
 
-        self.df_clean = extract_session_raw_data(str(self.raw_data_path), self.output_directory)
+        self.df_clean = extract_session_raw_data(str(self.raw_data_path), self.output_directory, self.animal)
 
         if 'CH2' in self.df_clean.columns:
             self.n_channels = 2
