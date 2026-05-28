@@ -171,7 +171,7 @@ def add_event_columns_from_raw(
     return result
 
 
-def load_raw_fluorescence(file_path: str = None):
+def load_raw_fluorescence(file_path: str = None, animal: str = None):
     """Load raw CSV with malformed headers/rows."""
     if not Path(file_path).exists():
         raise ValueError(f"File not found: {file_path}")
@@ -192,6 +192,20 @@ def load_raw_fluorescence(file_path: str = None):
         data_start = next((i for i, line in enumerate(lines) if 'TimeStamp' in line), 1)
         df = pd.read_csv(file_path, skiprows=data_start - 1, on_bad_lines='skip')
         print(f"  Fallback parse: shape={df.shape}")
+
+    print(df)
+
+    ch2_animals = ["Rat_5166", "Rat_5162"]
+    if animal in ch2_animals:
+        print("swapping CH2-410 and CH2-470 columns and del")
+        df["CH1-410"] = df["CH2-410"].to_numpy(copy=True)
+        df["CH1-470"] = df["CH2-470"].to_numpy(copy=True)
+        df = df.drop(columns=["CH2-410", "CH2-470"])
+
+    if "CH2-410" in df.columns:
+        df = df.drop(columns=["CH2-410", "CH2-470"])
+
+    print(df)
 
     return df
 
@@ -231,11 +245,11 @@ def save_cleaned(df_clean, output_dir):
     df_clean.to_csv(path, index=False)
 
 
-def extract_session_raw_data(raw_data_path, output_dir):
+def extract_session_raw_data(raw_data_path, output_dir, animal):
     """Full preprocessing pipeline for single file."""
     file_name = 'Fluorescence_Event.csv' if os.path.exists(os.path.join(raw_data_path, 'Fluorescence_Event.csv')) else 'Fluorescence.csv'
     raw_fluorescence_csv_path = os.path.join(raw_data_path, file_name)
-    df_raw = load_raw_fluorescence(raw_fluorescence_csv_path)
+    df_raw = load_raw_fluorescence(raw_fluorescence_csv_path, animal)
     df_clean = clean_and_map_events(df_raw)
     save_cleaned(df_clean, output_dir)
     return df_clean
