@@ -170,6 +170,7 @@ def compute_freezing_ratio_per_bout(
     freezing_onsets_s: Optional[np.ndarray],
     freezing_offsets_s: Optional[np.ndarray],
     recording_end_s: Optional[float] = None,
+    session: str = None,
 ) -> dict[str, float]:
     """
     Compute freezing ratio per named bout interval.
@@ -202,6 +203,9 @@ def compute_freezing_ratio_per_bout(
     ratios: dict[str, float] = {}
     for name, interval in bout_intervals.items():
         total_s = _interval_duration_s(interval)
+        if session == "Cond":
+            if name.startswith("cs_"):
+                total_s += -1.0
         if total_s <= 0:
             ratios[name] = np.nan
             continue
@@ -303,6 +307,7 @@ def build_freezing_behavior_profile_table(
             freezing_onsets_s=freezing_onsets_s,
             freezing_offsets_s=freezing_offsets_s,
             recording_end_s=recording_end_s,
+            session=session_column_name
         )
 
         row = {
