@@ -31,6 +31,8 @@ import pandas as pd
 from scipy.stats import linregress
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
+from params import baseline_offset_s
+
 
 
 def fit_reference_robust_bisquare(
@@ -837,6 +839,7 @@ def extract_epoched_data(
             raise ValueError("dff_signal_for_zscore must have same length as time_s")
 
     epochs_out = []
+    baseline_offset = int(baseline_offset_s/dt_s)
 
     for t_ev in event_times_s:
         if signal_kind == "dff":
@@ -844,7 +847,16 @@ def extract_epoched_data(
             if epoch is None:
                 continue
 
-            baseline_segment = epoch[n_pre - baseline_samples : n_pre]
+            baseline_segment = epoch[n_pre - baseline_samples - baseline_offset : n_pre - baseline_offset]
+            """idx_event = np.searchsorted(time_s, t_ev)
+            print(f"0 .... {idx_event - n_pre} ... {idx_event} ... {idx_event + n_post} ... {len(signal)}")
+
+            idx_event_epoch = idx_event - n_pre
+            l = idx_event_epoch - baseline_samples
+            r = idx_event_epoch
+            print(f"l={l}, r={r}")
+            print(len(epoch), len(epoch[l:r]))
+            baseline_segment = signal[idx_event - baseline_samples : idx_event]"""
 
             if dff_baseline_statistic == "mean":
                 baseline_value = float(np.mean(baseline_segment))
@@ -866,7 +878,7 @@ def extract_epoched_data(
         if dff_epoch is None:
             continue
 
-        dff_baseline_segment = dff_epoch[n_pre - baseline_samples : n_pre]
+        dff_baseline_segment = dff_epoch[n_pre - baseline_samples - baseline_offset : n_pre - baseline_offset]
 
         if dff_baseline_statistic == "mean":
             dff_baseline_value = float(np.mean(dff_baseline_segment))
@@ -879,7 +891,7 @@ def extract_epoched_data(
             continue
 
         dff_epoch_baselined = dff_epoch - dff_baseline_value
-        baseline_dff_for_z = dff_epoch_baselined[n_pre - baseline_samples : n_pre]
+        baseline_dff_for_z = dff_epoch_baselined[n_pre - baseline_samples - baseline_offset : n_pre - baseline_offset]
 
         if zscore_baseline_center == "mean":
             mu = float(np.mean(baseline_dff_for_z))
