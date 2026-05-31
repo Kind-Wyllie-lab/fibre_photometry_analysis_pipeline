@@ -20,6 +20,8 @@ from params import (
     color_zscore,
     color_event_onset,
     lw_peri_mean,
+    time_pre_event_s,
+    time_post_event_s
 )
 def build_session_peri_event_long_dataframe(
         animal: str,
@@ -613,17 +615,26 @@ class PhotometryGroupAnalyzer:
 
             figure, ax = plt.subplots(1, 1, figsize=figure_size_peri, sharex=True, sharey=True)
 
-            sns.lineplot(
+            print(animal_event_auc_dataframe)
+            animal_event_auc_dataframe = animal_event_auc_dataframe.loc[animal_event_auc_dataframe["group"] != "gcamp"].copy()
+            palette={"wt": "black", "het": "blue"}
+
+            sns.pointplot(
                 data=animal_event_auc_dataframe,
                 x="event_index",
                 y="auc",
                 hue="group",
-                hue_order=hue_order,
+                hue_order=list(palette.keys()),
                 estimator="mean",
                 errorbar="se",
-                palette=group_to_color,
-                marker="o",
+                palette=palette,
+                #dodge=0.25,
+                markers="o",
+                linestyles="-",
                 linewidth=lw_peri_mean,
+                capsize=0.15,
+                err_kws={"linewidth": 1.4},
+                markersize=5,
                 ax=ax,
             )
 
@@ -721,6 +732,15 @@ class PhotometryGroupAnalyzer:
                 ax=axis,
             )
 
+            """baseline_window_s = 2.0
+            axis.axvspan(
+                -baseline_window_s,
+                0,
+                color="grey",
+                alpha=0.25,
+                label=f"Baseline window ({baseline_window_s:.1f} s)",
+            )"""
+
             axis.axvline(0, color=color_event_onset, linestyle="--", linewidth=0.8)
             axis.set_ylabel("Z-score")
             n_animals = int(signal_dataframe["animal"].nunique())
@@ -729,6 +749,7 @@ class PhotometryGroupAnalyzer:
                 f"(all events, n={n_animals})"
             )
             axis.grid(alpha=0.3)
+            axis.set_xlim(-1*time_pre_event_s, time_post_event_s)
 
         axes[-1].set_xlabel("Time from event (s)")
         figure.tight_layout()
@@ -814,6 +835,17 @@ class PhotometryGroupAnalyzer:
         axis.set_title(f"Group peri-event average — wt vs het (all events, {session_label})")
         axis.grid(alpha=0.3)
         axis.legend(frameon=False)
+
+        """baseline_window_s = 2.0
+        axis.axvspan(
+            -baseline_window_s,
+            0,
+            color="grey",
+            alpha=0.25,
+            label=f"Baseline window ({baseline_window_s:.1f} s)",
+        )"""
+
+        axis.set_xlim(-1*time_pre_event_s, time_post_event_s)
 
         figure.tight_layout()
 
