@@ -263,7 +263,8 @@ class PhotometryPipeline:
         self.results = []
         animals_to_include = self.get_animal_names()
 
-        animals_to_include = [i for i in animals_to_include if i not in ['Rat_4987', 'Rat_4988', 'Rat_4990', 'Rat_391', 'Rat_5162']]
+        animals_to_include = [i for i in animals_to_include if i not in ['Rat_4987', 'Rat_4988', 'Rat_4990', 'Rat_391', 'Rat_5091', 'Rat_5092', 'Rat_5093', 'Rat_5094' ]] #, 'Rat_5162'
+        #animals_to_include = [i for i in animals_to_include if i not in ['Rat_391', 'Rat_390','Rat_389' ]] #, 'Rat_5162'
 
         for animal in animals_to_include:
             print(animal)

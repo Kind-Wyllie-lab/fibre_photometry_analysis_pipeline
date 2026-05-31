@@ -22,7 +22,7 @@ from typing import Literal
 
 base_path = Path(r"E:\Fibre_photmetry")
 
-sessions =  ["Cond"]
+sessions =  ["Recall"]
 
 def animal_output_dirs(animal_num: str, session:str):
     """Return (figures_dir, csv_dir). Create if missing."""
@@ -41,8 +41,17 @@ baseline_samples = 1000
 
 event_gap_ms = 5000
 
-time_pre_event_s = 10
-time_post_event_s = 15
+# assuming one at a time
+if "Cond" in sessions:
+    time_pre_event_s = 3#3#10#3
+    time_post_event_s = 15#35#40#35
+if "Recall" in sessions:
+    time_pre_event_s = 3#3#10#3
+    time_post_event_s = 35#35#40#35
+
+
+baseline_offset_s = 0.5
+
 
 selected_clusters = list(range(0, 20)) #SELECTED_CLUSTERS = list(range(5, 15)), select Clusters 5-14
 
