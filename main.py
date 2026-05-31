@@ -24,7 +24,7 @@ import pandas as pd
 import params
 from behaviour_processing import build_freezing_behavior_profile_table, freezing_profile_wide_to_tidy, \
     compute_extinction_index, compute_modulation_index
-from plotting import plot_freezing_ratio_profiles, plot_extinction_index_wt_vs_het, plot_modulation_index_wt_vs_het, \
+from plotting import plot_freezing_ratio_profiles, plot_two_group_metrics, plot_modulation_index_wt_vs_het, \
     plot_single_animal_freezing_ratio_profile
 
 matplotlib.use("TkAgg")
@@ -85,9 +85,32 @@ if __name__ == "__main__":
         engine="openpyxl",
     )[["animal_name", "group"]].rename(columns={"animal_name": "animal"})
 
-    freezing_profile_df = build_freezing_behavior_profile_table(
+    freezing_profile_df, freezing_profile_nonratio_df = build_freezing_behavior_profile_table(
         completed_sessions=completed_pipeline.results,
         metadata_dataframe=metadata_df, session_column_name=params.sessions[0],
+    )
+
+    print(freezing_profile_nonratio_df)
+    ax = plot_two_group_metrics(
+        ext_df=freezing_profile_nonratio_df,
+        genotype_col="group",  # or "group" depending on your ext_df
+        value_col="mean_freeze",
+        palette={"wt": "k", "het": "b"},
+        errorbar="se",
+        stats_enabled=True,
+        alpha=0.05,
+        ylabel="Mean freezing duration (s)",
+        show_legend = False
+    )
+    ax = plot_two_group_metrics(
+        ext_df=freezing_profile_nonratio_df,
+        genotype_col="group",  # or "group" depending on your ext_df
+        value_col="num_freeze",
+        palette={"wt": "k", "het": "b"},
+        errorbar="se",
+        stats_enabled=True,
+        alpha=0.05,
+        ylabel="Number of freezing events"
     )
 
     recall_df = freezing_profile_df.loc[freezing_profile_df[params.sessions[0]] == params.sessions[0]]
@@ -133,9 +156,10 @@ if __name__ == "__main__":
         cs_regex=r"^cs_(\d+)$",
     )
 
-    ext_df = ext_df.replace('gcamp', 'wt')
+    #ext_df = ext_df.replace('gcamp', 'wt')
+    #print()
     # 3) plot EI
-    ax = plot_extinction_index_wt_vs_het(
+    ax = plot_two_group_metrics(
         ext_df=ext_df,  # output of compute_extinction_index(...)
         genotype_col="genotype",  # or "group" depending on your ext_df
         value_col="ext_index",
@@ -143,6 +167,7 @@ if __name__ == "__main__":
         errorbar="se",
         stats_enabled=True,
         alpha=0.05,
+        ylabel="Extinction index"
     )
 
     # 2) compute MI (CS vs NONCS)
