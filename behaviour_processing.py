@@ -165,7 +165,7 @@ def build_behavior_bout_intervals_from_cs(
     return intervals
 
 
-def compute_freezing_ratio_per_bout(
+def compute_freezing_metrics_per_bout(
     bout_intervals: dict[str, tuple[float, float]],
     freezing_onsets_s: Optional[np.ndarray],
     freezing_offsets_s: Optional[np.ndarray],
@@ -212,7 +212,10 @@ def compute_freezing_ratio_per_bout(
         freeze_s = _compute_overlap_duration_s(interval, freezing_intervals_s)
         ratios[name] = float(freeze_s / total_s)
 
-    return ratios
+    mean_freeze_duration = {"mean_freeze": np.mean(freezing_intervals_s)}
+    freeze_number = {"num_freeze": len(freezing_intervals_s)}
+
+    return ratios, mean_freeze_duration, freeze_number
 
 def build_freezing_behavior_profile_table(
     completed_sessions: list,
@@ -269,7 +272,7 @@ def build_freezing_behavior_profile_table(
     meta["group"] = meta["group"].astype(str)
 
     rows = []
-
+    rows_nonratio = []
     for sess in completed_sessions:
         if sess.session_name == 'Recall':
             n_cs = 12
@@ -302,7 +305,7 @@ def build_freezing_behavior_profile_table(
         # Use end of post bout as recording_end for closing open freezing intervals if needed
         recording_end_s = bout_intervals["post_cs"][1]
 
-        ratios = compute_freezing_ratio_per_bout(
+        ratios, duration, number = compute_freezing_metrics_per_bout(
             bout_intervals=bout_intervals,
             freezing_onsets_s=freezing_onsets_s,
             freezing_offsets_s=freezing_offsets_s,
@@ -318,9 +321,21 @@ def build_freezing_behavior_profile_table(
         row.update(ratios)
         rows.append(row)
 
+        row2 = {
+            "animal": animal,
+            session_column_name: sess_name,
+            'group': meta.loc[meta['animal']== animal]['group'].values[0]
+        }
+        row2.update(duration)
+        row2.update(number)
+        rows_nonratio.append(row2)
+
+
     behavior_df = pd.DataFrame(rows)
+    rows_nonratio_df = pd.DataFrame(rows_nonratio)
+
     if behavior_df.empty:
-        return behavior_df
+        return behavior_df, rows_nonratio_df
 
     # behavior_df = behavior_df.merge(meta, on="animal", how="left", validate="many_to_one")
     if behavior_df["group"].isna().any():
@@ -338,7 +353,7 @@ def build_freezing_behavior_profile_table(
     ordered_cols = ["animal", "group", session_column_name] + existing_bout_cols
     behavior_df = behavior_df[ordered_cols]
 
-    return behavior_df
+    return behavior_df, rows_nonratio_df
 
 def freezing_profile_wide_to_tidy(
     freezing_profile_df: pd.DataFrame,
