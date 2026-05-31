@@ -106,17 +106,30 @@ for file, df, summary in summary_by_file:
 
     x_positions = np.arange(len(summary), dtype=float)
 
-    ax.bar(
+    """ax.bar(
         x_positions,
         summary["mean_auc"].to_numpy(dtype=float),
         yerr=summary["sem_auc"].fillna(0).to_numpy(dtype=float),
         capsize=4,
         color=[group_colors[group_name] for group_name in summary["group"].astype(str)],
-        edgecolor="black",
         linewidth=1.0,
         width=0.7,
         zorder=2,
-    )
+    )"""
+
+    for x_position, (_, row) in zip(x_positions, summary.iterrows()):
+        group_name = str(row["group"])
+        ax.bar(
+            x_position,
+            float(row["mean_auc"]),
+            yerr=float(0 if pd.isna(row["sem_auc"]) else row["sem_auc"]),
+            capsize=4,
+            color=group_colors[group_name],
+            linewidth=1.0,
+            width=0.7,
+            zorder=2,
+            label=f"{group_name} (n={int((df['group'] == group_name).sum())})",
+        )
 
     for x_position, group_name in zip(x_positions, summary["group"].astype(str)):
         group_animal_values = (
@@ -134,11 +147,10 @@ for file, df, summary in summary_by_file:
             x_jittered,
             group_animal_values,
             s=45,
-            color=group_colors[group_name],
-            edgecolor="white",
+            color="white",
+            edgecolor="black",
             linewidth=0.6,
             zorder=3,
-            label=f"{group_name} (n={int((df['group'] == group_name).sum())})",
         )
 
     ax.set_xticks(x_positions)
@@ -152,7 +164,7 @@ for file, df, summary in summary_by_file:
     ax.tick_params(axis="x", labelsize=15, pad=8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.25, zorder=0)
+    #ax.grid(axis="y", alpha=0.25, zorder=0)
 
     legend_title = "Group"
 
