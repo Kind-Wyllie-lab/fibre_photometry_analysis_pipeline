@@ -30,6 +30,8 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import colors as mcolors
 from matplotlib.cm import ScalarMappable
+from matplotlib.patches import Patch
+
 
 from params import (
     save_figures,
@@ -70,6 +72,8 @@ from params import (
     heatmap_show_all_ylabels,
     heatmap_ytick_major_step,
     heatmap_ytick_minor_step,
+    time_pre_event_s,
+    time_post_event_s
 )
 from stats import _two_group_independent_test, _p_to_stars, _annotate_two_group_stars
 
@@ -467,7 +471,7 @@ class PhotometryPlotter:
             self,
             auc_start_s: float = 0.0,
             auc_end_s: float = 2.0,
-            colormap_name: str = "Spectral",
+            colormap_name: str = "magma",
             marker_size: float = 55.0,
             point_alpha: float = 0.85,
             show_colorbar: bool = True,
@@ -538,10 +542,11 @@ class PhotometryPlotter:
             ax.scatter(
                 auc_dataframe["trial"].to_numpy(),
                 auc_dataframe[f"auc_{signal_type}_0_to_2s"].to_numpy(),
-                c=[cmap(norm(t)) for t in auc_dataframe["trial"].to_numpy()],
+                #c=[cmap(norm(t)) for t in auc_dataframe["trial"].to_numpy()],
+                c="k",
                 s=marker_size,
                 alpha=point_alpha,
-                edgecolor="none",
+                edgecolor= "k"
             )
 
             # Optional connecting line to help temporal reading across trials
@@ -555,7 +560,7 @@ class PhotometryPlotter:
             )
 
             ax.axhline(0.0, color="k", lw=0.9, alpha=0.35)
-            ax.set_xlabel("Trial index")
+            ax.set_xlabel(f"{self.event_name} per trial")
             ax.set_ylabel(f"AUC ({signal_type}·s)")
             ax.set_title(
                 f"Per-trial AUC of {signal_type} [{auc_start_s:.1f}, {auc_end_s:.1f}] s "
@@ -564,15 +569,15 @@ class PhotometryPlotter:
             )
             ax.grid(alpha=0.3)
 
+            self._set_xtick_params(ax)
+            self._set_ytick_params(ax)
+
             # Ticks: show integer trial indices
             ax.set_xlim(0.5, n_trials + 0.5)
             if n_trials <= 20:
                 ax.set_xticks(np.arange(1, n_trials + 1, dtype=int))
             else:
                 ax.xaxis.set_major_locator(plt.MaxNLocator(10, integer=True))
-
-            self._set_xtick_params(ax)
-            self._set_ytick_params(ax)
 
             if show_colorbar and n_trials > 1:
                 sm = ScalarMappable(norm=norm, cmap=cmap)
@@ -769,12 +774,12 @@ class PhotometryPlotter:
                 ax=axis,
             )
 
-            baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
+            baseline_window_s = 2.0
             axis.axvspan(
                 -baseline_window_s,
                 0,
                 color="grey",
-                alpha=0.15,
+                alpha=0.25,
                 label=f"Baseline window ({baseline_window_s:.1f} s)",
                 zorder=0,
             )
@@ -863,14 +868,14 @@ class PhotometryPlotter:
                 label=f"Mean {signal_type}",
             )
 
-            baseline_window_s = getattr(self, "peri_event_local_baseline_s", 2.0)
-            axis.axvspan(
+            baseline_window_s = 2.0
+            """axis.axvspan(
                 -baseline_window_s,
                 0,
                 color="grey",
-                alpha=0.15,
+                alpha=0.25,
                 label=f"Baseline window ({baseline_window_s:.1f} s)",
-            )
+            )"""
             axis.axvline(
                 0,
                 color=color_event_onset,
@@ -884,6 +889,7 @@ class PhotometryPlotter:
             axis.set_ylabel(signal_type)
             axis.set_title(f"Peri-event average — {signal_type} (n={n_trials} trials)"
             f" | {self.stem}_{self.event_name}_{self.channel_name}")
+            axis.set_xlim(-1*time_pre_event_s, time_post_event_s)           # there was data in the not plotted region, but seems to be cut before merging
             axis.grid(alpha=0.3)
             self._set_xtick_params(axis)
             self._set_ytick_params(axis)
@@ -988,9 +994,9 @@ class PhotometryPlotter:
         self.plot_peri_event_auc_by_trial(
             auc_start_s=0.0,
             auc_end_s=2.0,
-            colormap_name="Spectral",
+            colormap_name="magma",
             point_alpha=0.85,
-            show_colorbar=True,
+            show_colorbar=False,
         )
         if self.save_figures_enabled:
             print(f"SUCCESS: all figures saved to {self.output_directory}")
@@ -1096,7 +1102,7 @@ def plot_freezing_ratio_profiles(
     # delete gcamp
     #df_long = df_long.loc[df_long["group"] != "gcamp"].copy()
     # merge gcamp with wt
-    df_long.loc[df_long["group"] == "gcamp", "group"] = "wt"
+    #df_long.loc[df_long["group"] == "gcamp", "group"] = "wt"
 
     palette={"wt": "black", "het": "blue"}
 
@@ -1339,7 +1345,16 @@ def plot_single_animal_freezing_ratio_profile(
     return fig
 
 
-def plot_extinction_index_wt_vs_het(
+def select_groups(ext_df, groups, colname):
+    df_copy = ext_df.copy(deep=True)
+    palette_full = {"wt": "black", "het": "blue", "gcamp": "green"}
+    palette = {k: palette_full[k] for k in groups if k in palette_full}
+
+    df2 = df_copy[df_copy[colname].isin(groups)].copy()
+
+    return df2, palette
+
+def plot_two_group_metrics(
     ext_df,
     genotype_col: str = "genotype",
     value_col: str = "ext_index",
@@ -1351,9 +1366,11 @@ def plot_extinction_index_wt_vs_het(
     alpha: float = 0.05,
     ax: plt.Axes | None = None,
     session: str | None = None,
+    ylabel: str | None = None,
+    show_legend: bool = True,
 ) -> plt.Axes | None:
     """
-    Plot extinction index (EI) for wt vs het with mean±SE overlay and star-annotated stats.
+    Plot bar for given metric for wt vs het with mean±SE overlay and star-annotated stats.
 
     Parameters
     ----------
@@ -1383,30 +1400,33 @@ def plot_extinction_index_wt_vs_het(
     matplotlib.axes.Axes or None
         Axis with plot, or None if no data.
     """
-    if ext_df is None or ext_df.empty:
-        print("No extinction index data to plot.")
+    groups = ["wt", "het"]
+    ext_df2, palette = select_groups(ext_df, groups, genotype_col)
+
+    if ext_df2 is None or ext_df2.empty:
+        print(f"No {value_col} index data to plot.")
         return None
 
-    df_plot = ext_df.dropna(subset=[value_col]).copy()
+    df_plot = ext_df2.dropna(subset=[value_col]).copy()
     if df_plot.empty:
-        print("All extinction index values are NaN.")
+        print(f"All {value_col} index values are NaN.")
         return None
 
-    if palette is None:
-        palette = {"wt": "k", "het": "b"}
+    #if palette is None:
+    #    palette = {"wt": "k", "het": "b"}
 
     # Enforce wt/het only and fixed order
     df_plot[genotype_col] = df_plot[genotype_col].astype(str)
-    df_plot = df_plot.loc[df_plot[genotype_col].isin(["wt", "het"])].copy()
+    #df_plot = df_plot.loc[df_plot[genotype_col].isin(["wt", "het"])].copy()
     if df_plot.empty:
         print("No wt/het rows found.")
         return None
 
-    order = ["wt", "het"]
+    order = list(palette.keys())
     present = set(df_plot[genotype_col].unique())
-    if present != {"wt", "het"}:
-        print(f"Expected both wt and het for stats; got {sorted(present)}. Plotting without stats.")
-        stats_enabled = False
+    #if present != {"wt", "het"}:
+    #    print(f"Expected both wt and het for stats; got {sorted(present)}. Plotting without stats.")
+    #    stats_enabled = False
 
     if ax is None:
         plt.figure(figsize=(6.5, 4.2))
@@ -1421,7 +1441,12 @@ def plot_extinction_index_wt_vs_het(
         order=order,
         errorbar=errorbar,
         palette=palette,
+        hue=genotype_col,
+        hue_order=order,
         ax=ax,
+        capsize=0.1,
+        err_kws={"linewidth": 1.4, "color": "black"},
+        width=0.5,
     )
 
 
@@ -1434,37 +1459,61 @@ def plot_extinction_index_wt_vs_het(
             dodge=False,
             alpha=point_alpha,
             color="white",
+            linewidth=1,
             edgecolor="black",
-            linewidth=0.8,
             jitter=0.065,
             size=5,
             ax=ax,
+            legend=False,
         )
 
     ax.axhline(0.0, color="k", lw=1, alpha=0.35)
-    ax.set_ylabel("Extinction index")
-    ax.set_xlabel("Genotype")
-    ax.set_title("Extinction index (wt vs het)")
+    ax.set_ylabel(ylabel, fontsize=18)
+    ax.set_xlabel("Genotype", fontsize=16)
+    ax.set_title(f"{ylabel} ({groups[0]} vs {groups[1]})")
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
+    ax.yaxis.set_tick_params(labelsize=16)
+    ax.xaxis.set_tick_params(labelsize=15)
+
+    if show_legend:
+        group_counts = (
+            df_plot.groupby(genotype_col)["animal"]
+            .nunique()
+            .to_dict()
+        )
+
+        legend_handles = [
+            Patch(facecolor=palette[group], edgecolor="black")
+            for group in order
+        ]
+        legend_labels = [
+            f"{group} (n={group_counts.get(group, 0)})"
+            for group in order
+        ]
+        ax.legend(legend_handles, legend_labels, title="Group", frameon=False)
 
 
     if stats_enabled:
-        x = df_plot.loc[df_plot[genotype_col] == "wt", value_col].to_numpy(dtype=float)
-        y = df_plot.loc[df_plot[genotype_col] == "het", value_col].to_numpy(dtype=float)
+        x = df_plot.loc[df_plot[genotype_col] == groups[0], value_col].to_numpy(dtype=float)
+        y = df_plot.loc[df_plot[genotype_col] == groups[1], value_col].to_numpy(dtype=float)
 
         res = _two_group_independent_test(x, y, alpha=alpha)
         stars = _p_to_stars(res["p"])
         _annotate_two_group_stars(ax, x_positions=(0, 1), stars=stars)
 
         print(
-            f"EI stats: {res['test']}; p={res['p']:.3g}; normal={res['normal']}; "
-            f"equal_var={res['equal_var']}; n={res['n1']} vs {res['n2']}"
+            f"Stats for {value_col}:\n"
+            f"EI stats: {res['test']}; p={res['p']:.3g}; normal={res['normal']}; \n"
+            f"equal_var={res['equal_var']}; n={res['n1']} vs {res['n2']}\n"
+            f"group 1 = {groups[0]}, group 2 = {groups[1]}\n"
         )
 
-    fig.savefig(f'exctinction_index_{session}.svg', dpi=300)
-
+    fig.tight_layout()
+    fig.savefig(f'{value_col}_{session}.svg', dpi=300)
     return ax
+
+
 
 def plot_modulation_index_wt_vs_het(
     mi_df: pd.DataFrame,
